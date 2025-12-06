@@ -10,6 +10,9 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"warehouse-management-system/internal/handler"
+	"warehouse-management-system/internal/repository"
+	"warehouse-management-system/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -29,15 +32,15 @@ func Run() {
 	}
 	defer db.Close()
 
-	// userRepository := repository.NewUserRepository(db, logger)
+	productRepository := repository.NewProductRepository(db, logger)
 
-	// userService := service.NewUserService(userRepository, logger)
+	productService := service.NewProductService(productRepository, logger)
 
-	// userHandler := handler.NewUserHandler(userService, logger)
+	productHandler := handler.NewProductHandler(productService, logger)
 
 	router := gin.Default()
 
-	//handler.InitRoutes(router, userHandler)
+	handler.InitRoutes(router, productHandler)
 
 	port := os.Getenv("HTTP_PORT")
 	if port == "" {
