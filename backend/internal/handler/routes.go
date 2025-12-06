@@ -4,7 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func InitRoutes(r *gin.Engine, productHandler *ProductHandler) {
+func InitRoutes(r *gin.Engine, productHandler *ProductHandler, counterpartyHandler *CounterpartyHandler) {
 	productsGroup := r.Group("/products")
 	{
 		productsGroup.POST("/", productHandler.Create)
@@ -13,5 +13,14 @@ func InitRoutes(r *gin.Engine, productHandler *ProductHandler) {
 		productsGroup.PUT("/:id", productHandler.Update)
 		productsGroup.DELETE("/:id", productHandler.Delete)
 		productsGroup.POST("/:id/stock", productHandler.UpdateStock)
+	}
+
+	counterpartyGroup := r.Group("/counterparties")
+	{
+		counterpartyGroup.POST("/", counterpartyHandler.Create)
+		counterpartyGroup.GET("/", counterpartyHandler.GetList)
+		counterpartyGroup.GET("/:id", counterpartyHandler.Get)
+		counterpartyGroup.PUT("/:id", counterpartyHandler.Update)
+		counterpartyGroup.DELETE("/:id", counterpartyHandler.Delete)
 	}
 }

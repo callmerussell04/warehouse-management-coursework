@@ -33,14 +33,17 @@ func Run() {
 	defer db.Close()
 
 	productRepository := repository.NewProductRepository(db, logger)
+	counterpartyRepository := repository.NewCounterpartyRepository(db, logger)
 
 	productService := service.NewProductService(productRepository, logger)
+	counterpartyService := service.NewCounterpartyService(counterpartyRepository, logger)
 
 	productHandler := handler.NewProductHandler(productService, logger)
+	counterpartyHandler := handler.NewCounterpartyHandler(counterpartyService, logger)
 
 	router := gin.Default()
 
-	handler.InitRoutes(router, productHandler)
+	handler.InitRoutes(router, productHandler, counterpartyHandler)
 
 	port := os.Getenv("HTTP_PORT")
 	if port == "" {
