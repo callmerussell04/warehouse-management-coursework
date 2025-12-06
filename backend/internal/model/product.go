@@ -14,3 +14,18 @@ type Product struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
+
+type TransactionType string
+
+const (
+	TransactionIncome  TransactionType = "income"
+	TransactionExpense TransactionType = "expense"
+)
+
+type InventoryTransaction struct {
+	ID        uuid.UUID
+	ProductID uuid.UUID
+	Type      TransactionType
+	Quantity  int
+	CreatedAt time.Time
+}
