@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
 import ForgotUsernamePage from './pages/ForgotUsernamePage.jsx';
 import ResetPasswordPage from './pages/ResetPasswordPage.jsx';
+import CounterpartiesPage from './pages/counterparties/CounterpartiesPage.jsx';
 
 const routes = [
   {
@@ -32,6 +33,10 @@ const routes = [
   {
     path: '/profile',
     element: <ProfilePage />,
+  },
+  {
+    path: '/counterparties',
+    element: <CounterpartiesPage />,
   },
 ];
 
