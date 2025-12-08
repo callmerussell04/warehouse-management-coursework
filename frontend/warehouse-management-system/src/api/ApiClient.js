@@ -24,11 +24,15 @@ export const TokenService = {
 };
 
 function responseHandler(response) {
-    if (response.status === 200 || response.status === 201) {
+    if (response.status >= 200 && response.status < 300) {
+        if (response.status === 204) {
+            return null;
+        }
         const data = response?.data;
         if (!data) {
             throw new HttpError('API Error. No data!');
         }
+        
         return data;
     }
     throw new HttpError(`API Error! Invalid status code ${response.status}!`);
@@ -102,7 +106,7 @@ ApiClient.interceptors.response.use(
                     { withCredentials: true }
                 );
 
-                const newAccessToken = refreshResponse.access_token;
+                const newAccessToken = refreshResponse.data?.access_token;
                 if (!newAccessToken) throw new Error('No access token in refresh response');
 
                 TokenService.setAccessToken(newAccessToken);
