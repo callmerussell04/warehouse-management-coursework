@@ -34,7 +34,6 @@ type LoginResponse struct {
 
 type SendOTPRequest struct {
 	Email string `json:"email" binding:"required,email"`
-	Type  string `json:"type" binding:"required,oneof=activation recovery"`
 }
 
 type ResetPasswordRequest struct {

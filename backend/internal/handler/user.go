@@ -18,7 +18,7 @@ import (
 type UserService interface {
 	CreateUser(ctx context.Context, username, email, fullName, role string) (*model.User, error)
 	Login(ctx context.Context, username, password string) (accessToken, refreshToken string, user *model.User, err error)
-	GenerateAndSendOTP(ctx context.Context, email string, purpose string) error
+	GenerateAndSendOTP(ctx context.Context, email string) error
 	ResetPassword(ctx context.Context, email, code, newPassword string) error
 	RefreshToken(ctx context.Context, tokenString string) (string, error)
 	GetList(ctx context.Context, page, pageSize int) ([]*model.User, int, error)
@@ -112,8 +112,7 @@ func (h *UserHandler) RequestOTP(c *gin.Context) {
 		return
 	}
 
-	otpType := req.Type
-	err := h.service.GenerateAndSendOTP(c.Request.Context(), req.Email, otpType)
+	err := h.service.GenerateAndSendOTP(c.Request.Context(), req.Email)
 
 	if err != nil {
 		h.logger.Error("OTP generation failed", "error", err, "email", req.Email)

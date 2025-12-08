@@ -28,9 +28,9 @@ type UserRepository interface {
 }
 
 type OTPRepository interface {
-	Save(ctx context.Context, email, code, purpose string, duration time.Duration) error
-	Get(ctx context.Context, email, purpose string) (string, error)
-	Delete(ctx context.Context, email, purpose string) error
+	Save(ctx context.Context, email, code string, duration time.Duration) error
+	Get(ctx context.Context, email string) (string, error)
+	Delete(ctx context.Context, email string) error
 }
 
 type NotificationService interface {
@@ -189,7 +189,7 @@ func (s *UserService) RefreshToken(ctx context.Context, tokenString string) (str
 	return newAccessToken, nil
 }
 
-func (s *UserService) GenerateAndSendOTP(ctx context.Context, email string, purpose string) error {
+func (s *UserService) GenerateAndSendOTP(ctx context.Context, email string) error {
 	if _, err := s.userRepository.GetByEmail(ctx, email); err != nil {
 		s.logger.Warn("OTP requested for non-existent email", "email", email)
 		return nil
@@ -200,31 +200,20 @@ func (s *UserService) GenerateAndSendOTP(ctx context.Context, email string, purp
 		return customErrors.ErrInternal
 	}
 
-	if err := s.otpRepository.Save(ctx, email, code, purpose, 15*time.Minute); err != nil {
+	if err := s.otpRepository.Save(ctx, email, code, 15*time.Minute); err != nil {
 		return err
 	}
 
-	subject := "Warehouse System - Action Required"
-	body := fmt.Sprintf("Your security code for %s is: %s. It expires in 15 minutes.", purpose, code)
+	subject := "Warehouse System - Security Code"
+	body := fmt.Sprintf("Your security code is: %s. It expires in 15 minutes.", code)
 
 	return s.notifier.SendEmail(email, subject, body)
 }
 
 func (s *UserService) ResetPassword(ctx context.Context, email, code, newPassword string) error {
-	purposes := []string{"activation", "recovery"}
-	var storedCode string
-	var foundPurpose string
-	var err error
+	storedCode, err := s.otpRepository.Get(ctx, email)
 
-	for _, p := range purposes {
-		storedCode, err = s.otpRepository.Get(ctx, email, p)
-		if err == nil && storedCode != "" {
-			foundPurpose = p
-			break
-		}
-	}
-
-	if foundPurpose == "" {
+	if err != nil || storedCode == "" {
 		return customErrors.NewAppError(customErrors.ErrInvalidInput, "Invalid or expired OTP code")
 	}
 
@@ -242,8 +231,8 @@ func (s *UserService) ResetPassword(ctx context.Context, email, code, newPasswor
 		return err
 	}
 
-	_ = s.otpRepository.Delete(ctx, email, foundPurpose)
-	s.logger.Info("Password updated successfully", "email", email, "purpose", foundPurpose)
+	_ = s.otpRepository.Delete(ctx, email)
+	s.logger.Info("Password updated successfully", "email", email)
 	return nil
 }
 

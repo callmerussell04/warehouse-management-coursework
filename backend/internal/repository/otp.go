@@ -20,12 +20,12 @@ func NewRedisOTPRepository(client *redis.Client, logger *slog.Logger) *RedisOTPR
 	return &RedisOTPRepository{client: client, logger: logger}
 }
 
-func (r *RedisOTPRepository) key(email, purpose string) string {
-	return fmt.Sprintf("otp:%s:%s", email, purpose)
+func (r *RedisOTPRepository) key(email string) string {
+	return fmt.Sprintf("otp:%s", email)
 }
 
-func (r *RedisOTPRepository) Save(ctx context.Context, email, code, purpose string, duration time.Duration) error {
-	key := r.key(email, purpose)
+func (r *RedisOTPRepository) Save(ctx context.Context, email, code string, duration time.Duration) error {
+	key := r.key(email)
 
 	err := r.client.Set(ctx, key, code, duration).Err()
 	if err != nil {
@@ -35,8 +35,8 @@ func (r *RedisOTPRepository) Save(ctx context.Context, email, code, purpose stri
 	return nil
 }
 
-func (r *RedisOTPRepository) Get(ctx context.Context, email, purpose string) (string, error) {
-	key := r.key(email, purpose)
+func (r *RedisOTPRepository) Get(ctx context.Context, email string) (string, error) {
+	key := r.key(email)
 
 	val, err := r.client.Get(ctx, key).Result()
 
@@ -52,8 +52,8 @@ func (r *RedisOTPRepository) Get(ctx context.Context, email, purpose string) (st
 	return val, nil
 }
 
-func (r *RedisOTPRepository) Delete(ctx context.Context, email, purpose string) error {
-	key := r.key(email, purpose)
+func (r *RedisOTPRepository) Delete(ctx context.Context, email string) error {
+	key := r.key(email)
 
 	err := r.client.Del(ctx, key).Err()
 	if err != nil {
