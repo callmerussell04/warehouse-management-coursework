@@ -8,6 +8,7 @@ var (
 	ErrInternal          = errors.New("internal error")
 	ErrInvalidInput      = errors.New("invalid input parameter")
 	ErrInsufficientStock = errors.New("insufficient stock")
+	ErrUnauthorized      = errors.New("unauthorized")
 )
 
 type AppError struct {
@@ -18,6 +19,10 @@ type AppError struct {
 
 func (e *AppError) Error() string {
 	return e.Message
+}
+
+func (e *AppError) Unwrap() error {
+	return e.Err
 }
 
 func NewAppError(err error, msg string) *AppError {
