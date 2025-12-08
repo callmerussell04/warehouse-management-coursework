@@ -14,6 +14,7 @@ func InitRoutes(r *gin.Engine, logger *slog.Logger, jwtSecret []byte, productH *
 	authGroup := r.Group("/auth")
 	{
 		authGroup.POST("/login", userH.Login)
+		authGroup.POST("/logout", userH.Logout)
 		authGroup.POST("/request-otp", userH.RequestOTP)
 		authGroup.POST("/reset-password", userH.ResetPassword)
 		authGroup.POST("/refresh", userH.RefreshToken)

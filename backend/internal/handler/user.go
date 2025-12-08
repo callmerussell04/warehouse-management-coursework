@@ -80,15 +80,29 @@ func (h *UserHandler) Login(c *gin.Context) {
 		refreshToken,
 		int(refreshCookieDuration.Seconds()),
 		"/",
-		c.Request.Host, // Домен, если нужно, иначе c.Request.Host (для текущего)
-		true,           // Secure: true (обязательно для продакшена, требует HTTPS)
-		true,           // HttpOnly: true (защита от XSS)
+		c.Request.Host,
+		true,
+		true,
 	)
 
 	c.JSON(http.StatusOK, dto.LoginResponse{
 		AccessToken: accessToken,
 		User:        h.mapUserToResponse(user),
 	})
+}
+
+func (h *UserHandler) Logout(c *gin.Context) {
+	c.SetCookie(
+		"refresh_token",
+		"",
+		-1,
+		"/",
+		c.Request.Host,
+		true,
+		true,
+	)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }
 
 func (h *UserHandler) RequestOTP(c *gin.Context) {
