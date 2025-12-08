@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"warehouse-management-system/internal/handler"
+	"warehouse-management-system/internal/middleware"
 	"warehouse-management-system/internal/repository"
 	"warehouse-management-system/internal/service"
 
@@ -90,6 +91,8 @@ func Run() {
 	orderHandler := handler.NewOrderHandler(orderService, logger)
 
 	router := gin.Default()
+
+	router.Use(middleware.CORSMiddleware())
 
 	handler.InitRoutes(router, logger, jwtSecret, productHandler, counterpartyHandler, orderHandler, userHandler)
 
