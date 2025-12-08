@@ -39,8 +39,8 @@ func InitRoutes(r *gin.Engine, logger *slog.Logger, jwtSecret []byte, productH *
 		userGroup := api.Group("/users")
 		userGroup.Use(middleware.RequireRole(model.RoleAdmin))
 		{
-			userGroup.POST("/", userH.Create)
-			userGroup.GET("/", userH.GetList)
+			userGroup.POST("", userH.Create)
+			userGroup.GET("", userH.GetList)
 			userGroup.DELETE("/:id", userH.Delete)
 		}
 
@@ -49,8 +49,8 @@ func InitRoutes(r *gin.Engine, logger *slog.Logger, jwtSecret []byte, productH *
 		productsGroup := api.Group("/products")
 		productsGroup.Use(commonAccess)
 		{
-			productsGroup.POST("/", productH.Create)
-			productsGroup.GET("/", productH.GetList)
+			productsGroup.POST("", productH.Create)
+			productsGroup.GET("", productH.GetList)
 			productsGroup.GET("/:id", productH.Get)
 			productsGroup.PUT("/:id", productH.Update)
 			productsGroup.DELETE("/:id", productH.Delete)
@@ -60,8 +60,8 @@ func InitRoutes(r *gin.Engine, logger *slog.Logger, jwtSecret []byte, productH *
 		counterpartyGroup := api.Group("/counterparties")
 		counterpartyGroup.Use(commonAccess)
 		{
-			counterpartyGroup.POST("/", counterpartyH.Create)
-			counterpartyGroup.GET("/", counterpartyH.GetList)
+			counterpartyGroup.POST("", counterpartyH.Create)
+			counterpartyGroup.GET("", counterpartyH.GetList)
 			counterpartyGroup.GET("/:id", counterpartyH.Get)
 			counterpartyGroup.PUT("/:id", counterpartyH.Update)
 			counterpartyGroup.DELETE("/:id", counterpartyH.Delete)
@@ -70,8 +70,8 @@ func InitRoutes(r *gin.Engine, logger *slog.Logger, jwtSecret []byte, productH *
 		orderGroup := api.Group("/orders")
 		orderGroup.Use(commonAccess)
 		{
-			orderGroup.POST("/", orderH.Create)
-			orderGroup.GET("/", orderH.GetList)
+			orderGroup.POST("", orderH.Create)
+			orderGroup.GET("", orderH.GetList)
 			orderGroup.GET("/:id", orderH.Get)
 			orderGroup.PUT("/:id", orderH.Update)
 			orderGroup.DELETE("/:id", orderH.Delete)
