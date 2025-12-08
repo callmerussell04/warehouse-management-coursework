@@ -36,6 +36,10 @@ type SendOTPRequest struct {
 	Email string `json:"email" binding:"required,email"`
 }
 
+type ForgotUsernameRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
 type ResetPasswordRequest struct {
 	Email       string `json:"email" binding:"required,email"`
 	OTP         string `json:"otp" binding:"required,len=6"`

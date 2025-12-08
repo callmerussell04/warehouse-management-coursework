@@ -18,6 +18,7 @@ import (
 type UserService interface {
 	CreateUser(ctx context.Context, username, email, fullName, role string) (*model.User, error)
 	Login(ctx context.Context, username, password string) (accessToken, refreshToken string, user *model.User, err error)
+	RecoverUsername(ctx context.Context, email string) error
 	GenerateAndSendOTP(ctx context.Context, email string) error
 	ResetPassword(ctx context.Context, email, code, newPassword string) error
 	RefreshToken(ctx context.Context, tokenString string) (string, error)
@@ -103,6 +104,23 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+}
+
+func (h *UserHandler) ForgotUsername(c *gin.Context) {
+	var req dto.ForgotUsernameRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid email format"})
+		return
+	}
+
+	err := h.service.RecoverUsername(c.Request.Context(), req.Email)
+	if err != nil {
+		RespondWithError(c, h.logger, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "If the email is registered, the username has been sent to it."})
 }
 
 func (h *UserHandler) RequestOTP(c *gin.Context) {

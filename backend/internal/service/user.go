@@ -150,6 +150,24 @@ func (s *UserService) Login(ctx context.Context, username, password string) (acc
 	return accessToken, refreshToken, u, nil
 }
 
+func (s *UserService) RecoverUsername(ctx context.Context, email string) error {
+	user, err := s.userRepository.GetByEmail(ctx, email)
+	if err != nil {
+		s.logger.Info("Username recovery requested for non-existent email", "email", email)
+		return nil
+	}
+
+	subject := "Warehouse System - Username Recovery"
+	body := fmt.Sprintf("Hello %s,\n\nYou requested to recover your username.\nYour username is: %s\n\nIf you did not request this, please ignore this email.", user.FullName, user.Username)
+
+	if err := s.notifier.SendEmail(email, subject, body); err != nil {
+		s.logger.Error("Failed to send username recovery email", "error", err, "email", email)
+		return customErrors.ErrInternal
+	}
+
+	return nil
+}
+
 func (s *UserService) RefreshToken(ctx context.Context, tokenString string) (string, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &model.UserClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
