@@ -1,6 +1,9 @@
 package model
 
-import "github.com/google/uuid"
+import (
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+)
 
 type Role string
 
@@ -16,4 +19,12 @@ type User struct {
 	PasswordHash string
 	FullName     string
 	Role         Role
+	IsActive     bool
+}
+
+type UserClaims struct {
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
+	Role     string `json:"role"`
+	jwt.RegisteredClaims
 }
