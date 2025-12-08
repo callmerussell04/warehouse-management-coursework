@@ -3,6 +3,7 @@ import AuthApiService from '../service/AuthApiService';
 import { TokenService } from '../../api/ApiClient';
 import { useNavigate } from "react-router-dom";
 import toast from 'react-hot-toast';
+import { useUser } from '../context/UserContext';
 
 const useAuthForm = () => {
     const [credentials, setCredentials] = useState({
@@ -17,6 +18,7 @@ const useAuthForm = () => {
         setCredentials((prev) => ({ ...prev, [name]: value }));
     };
 
+    const { setUser } = useUser();
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
@@ -27,6 +29,7 @@ const useAuthForm = () => {
         const response = await AuthApiService.login(credentials);
         if (response?.access_token) {
             TokenService.setAccessToken(response.access_token);
+            setUser(response.user);
             toast.success('Успешный вход!');
             navigate("/");
         } else {

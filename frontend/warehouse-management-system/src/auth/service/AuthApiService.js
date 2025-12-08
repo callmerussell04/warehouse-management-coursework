@@ -6,6 +6,10 @@ class AuthApiService {
     async login(body) {
         return ApiClient.post(`${this.url}/login`, body);
     }
+
+    async logout() {
+        return ApiClient.post(`${this.url}/logout`);
+    }
 }
 
 export default new AuthApiService();

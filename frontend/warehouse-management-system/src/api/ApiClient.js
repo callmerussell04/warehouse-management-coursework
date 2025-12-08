@@ -19,6 +19,7 @@ export const TokenService = {
     getAccessToken: () => accessToken,
     clear: () => {
         accessToken = null;
+        localStorage.removeItem('user_data');
     },
 };
 

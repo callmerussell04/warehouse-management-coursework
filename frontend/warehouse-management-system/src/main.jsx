@@ -7,6 +7,7 @@ import React from 'react';
 import ErrorPage from './pages/ErrorPage';
 import Homepage from './pages/Homepage';
 import LoginPage from './pages/LoginPage.jsx';
+import ProfilePage from './pages/ProfilePage.jsx';
 
 const routes = [
   {
@@ -17,6 +18,10 @@ const routes = [
   {
     path: '/login',
     element: <LoginPage />,
+  },
+    {
+    path: '/profile',
+    element: <ProfilePage />,
   },
 ];
 
