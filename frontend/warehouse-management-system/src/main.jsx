@@ -6,12 +6,17 @@ import { RouterProvider, createBrowserRouter } from 'react-router-dom';
 import React from 'react';
 import ErrorPage from './pages/ErrorPage';
 import Homepage from './pages/Homepage';
+import LoginPage from './pages/LoginPage.jsx';
 
 const routes = [
   {
     index: true,
     path: '/',
     element: <Homepage />,
+  },
+  {
+    path: '/login',
+    element: <LoginPage />,
   },
 ];
 
