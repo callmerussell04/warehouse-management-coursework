@@ -1,35 +1,68 @@
 package handler
 
 import (
+	"log/slog"
+
+	"warehouse-management-system/internal/middleware"
+	"warehouse-management-system/internal/model"
+
 	"github.com/gin-gonic/gin"
 )
 
-func InitRoutes(r *gin.Engine, productHandler *ProductHandler, counterpartyHandler *CounterpartyHandler, orderHandler *OrderHandler) {
-	productsGroup := r.Group("/products")
+func InitRoutes(r *gin.Engine, logger *slog.Logger, jwtSecret []byte, productH *ProductHandler, counterpartyH *CounterpartyHandler, orderH *OrderHandler, userH *UserHandler) {
+
+	authGroup := r.Group("/auth")
 	{
-		productsGroup.POST("/", productHandler.Create)
-		productsGroup.GET("/", productHandler.GetList)
-		productsGroup.GET("/:id", productHandler.Get)
-		productsGroup.PUT("/:id", productHandler.Update)
-		productsGroup.DELETE("/:id", productHandler.Delete)
-		productsGroup.POST("/:id/stock", productHandler.UpdateStock)
+		authGroup.POST("/login", userH.Login)
+		authGroup.POST("/request-otp", userH.RequestOTP)
+		authGroup.POST("/reset-password", userH.ResetPassword)
+		authGroup.POST("/refresh", userH.RefreshToken)
 	}
 
-	counterpartyGroup := r.Group("/counterparties")
-	{
-		counterpartyGroup.POST("/", counterpartyHandler.Create)
-		counterpartyGroup.GET("/", counterpartyHandler.GetList)
-		counterpartyGroup.GET("/:id", counterpartyHandler.Get)
-		counterpartyGroup.PUT("/:id", counterpartyHandler.Update)
-		counterpartyGroup.DELETE("/:id", counterpartyHandler.Delete)
-	}
+	authMiddleware := middleware.AuthMiddleware(logger, jwtSecret)
 
-	orderGroup := r.Group("/orders")
+	api := r.Group("/api")
+	api.Use(authMiddleware)
 	{
-		orderGroup.POST("/", orderHandler.Create)
-		orderGroup.GET("/", orderHandler.GetList)
-		orderGroup.GET("/:id", orderHandler.Get)
-		orderGroup.PUT("/:id", orderHandler.Update)
-		orderGroup.DELETE("/:id", orderHandler.Delete)
+		userGroup := api.Group("/users")
+		userGroup.Use(middleware.RequireRole(model.RoleAdmin))
+		{
+			userGroup.POST("/", userH.Create)
+			userGroup.GET("/", userH.GetList)
+			userGroup.DELETE("/:id", userH.Delete)
+		}
+
+		commonAccess := middleware.RequireRole(model.RoleAdmin, model.RoleWorker)
+
+		productsGroup := api.Group("/products")
+		productsGroup.Use(commonAccess)
+		{
+			productsGroup.POST("/", productH.Create)
+			productsGroup.GET("/", productH.GetList)
+			productsGroup.GET("/:id", productH.Get)
+			productsGroup.PUT("/:id", productH.Update)
+			productsGroup.DELETE("/:id", productH.Delete)
+			productsGroup.POST("/:id/stock", productH.UpdateStock)
+		}
+
+		counterpartyGroup := api.Group("/counterparties")
+		counterpartyGroup.Use(commonAccess)
+		{
+			counterpartyGroup.POST("/", counterpartyH.Create)
+			counterpartyGroup.GET("/", counterpartyH.GetList)
+			counterpartyGroup.GET("/:id", counterpartyH.Get)
+			counterpartyGroup.PUT("/:id", counterpartyH.Update)
+			counterpartyGroup.DELETE("/:id", counterpartyH.Delete)
+		}
+
+		orderGroup := api.Group("/orders")
+		orderGroup.Use(commonAccess)
+		{
+			orderGroup.POST("/", orderH.Create)
+			orderGroup.GET("/", orderH.GetList)
+			orderGroup.GET("/:id", orderH.Get)
+			orderGroup.PUT("/:id", orderH.Update)
+			orderGroup.DELETE("/:id", orderH.Delete)
+		}
 	}
 }
