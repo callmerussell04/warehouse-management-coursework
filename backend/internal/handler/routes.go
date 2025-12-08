@@ -7,9 +7,19 @@ import (
 	"warehouse-management-system/internal/model"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 func InitRoutes(r *gin.Engine, logger *slog.Logger, jwtSecret []byte, productH *ProductHandler, counterpartyH *CounterpartyHandler, orderH *OrderHandler, userH *UserHandler) {
+	r.StaticFile("/openapi.yml", "./api/openapi.yml")
+
+	docsUrl := ginSwagger.URL("/openapi.yml")
+	r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, docsUrl))
+
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
 
 	authGroup := r.Group("/auth")
 	{
@@ -17,6 +27,7 @@ func InitRoutes(r *gin.Engine, logger *slog.Logger, jwtSecret []byte, productH *
 		authGroup.POST("/logout", userH.Logout)
 		authGroup.POST("/request-otp", userH.RequestOTP)
 		authGroup.POST("/reset-password", userH.ResetPassword)
+		authGroup.POST("/forgot-username", userH.ForgotUsername)
 		authGroup.POST("/refresh", userH.RefreshToken)
 	}
 
