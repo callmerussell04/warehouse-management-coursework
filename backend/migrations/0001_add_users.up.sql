@@ -6,5 +6,6 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(255) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(255) NOT NULL,
-    user_role user_role NOT NULL
+    role user_role NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT FALSE
 );
