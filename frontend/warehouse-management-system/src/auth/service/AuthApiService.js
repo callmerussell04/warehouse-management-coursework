@@ -10,6 +10,18 @@ class AuthApiService {
     async logout() {
         return ApiClient.post(`${this.url}/logout`);
     }
+
+    async requestOTP(body) {
+        return ApiClient.post(`${this.url}/request-otp`, body)
+    }
+
+    async resetPassword(body) {
+        return ApiClient.post(`${this.url}/reset-password`, body)
+    }
+
+    async forgotUsername(body) {
+        return ApiClient.post(`${this.url}/forgot-username`, body)
+    }
 }
 
 export default new AuthApiService();

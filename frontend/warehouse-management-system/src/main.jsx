@@ -8,6 +8,8 @@ import ErrorPage from './pages/ErrorPage';
 import Homepage from './pages/Homepage';
 import LoginPage from './pages/LoginPage.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
+import ForgotUsernamePage from './pages/ForgotUsernamePage.jsx';
+import ResetPasswordPage from './pages/ResetPasswordPage.jsx';
 
 const routes = [
   {
@@ -19,7 +21,15 @@ const routes = [
     path: '/login',
     element: <LoginPage />,
   },
-    {
+  {
+    path: '/forgot-username',
+    element: <ForgotUsernamePage />,
+  },
+  {
+    path: '/reset-password',
+    element: <ResetPasswordPage />,
+  },
+  {
     path: '/profile',
     element: <ProfilePage />,
   },
