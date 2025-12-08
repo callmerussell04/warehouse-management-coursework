@@ -27,6 +27,9 @@ func RespondWithError(c *gin.Context, logger *slog.Logger, err error) {
 	case errors.Is(err, customErrors.ErrInsufficientStock):
 		status = http.StatusConflict
 		message = err.Error()
+	case errors.Is(err, customErrors.ErrUnauthorized):
+		status = http.StatusUnauthorized
+		message = err.Error()
 	default:
 		logger.Error("internal server error", "error", err)
 		status = http.StatusInternalServerError
