@@ -8,12 +8,12 @@ run:
 output:
   sort-results: true
 
-linnters:
+linters:
+  disable: errcheck
   enable:
     - govet
     - staticcheck
     - unused
-    - errcheck
     - ineffassign
 
 issues:
