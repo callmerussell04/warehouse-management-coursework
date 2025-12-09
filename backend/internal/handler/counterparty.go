@@ -19,7 +19,7 @@ type CounterpartyService interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*model.Counterparty, error)
 	Update(ctx context.Context, id uuid.UUID, name, phone, email string) (*model.Counterparty, error)
 	Delete(ctx context.Context, id uuid.UUID) error
-	GetList(ctx context.Context, page, pageSize int) ([]*model.Counterparty, int, error)
+	GetList(ctx context.Context, page, pageSize int, typeFilter string) ([]*model.Counterparty, int, error)
 }
 
 type CounterpartyHandler struct {
@@ -103,6 +103,7 @@ func (h *CounterpartyHandler) Delete(c *gin.Context) {
 func (h *CounterpartyHandler) GetList(c *gin.Context) {
 	pageStr := c.DefaultQuery("page", "1")
 	pageSizeStr := c.DefaultQuery("pageSize", "10")
+	typeFilter := c.Query("type")
 
 	page, errP := strconv.Atoi(pageStr)
 	pageSize, errS := strconv.Atoi(pageSizeStr)
@@ -112,7 +113,12 @@ func (h *CounterpartyHandler) GetList(c *gin.Context) {
 		return
 	}
 
-	list, totalCount, err := h.service.GetList(c.Request.Context(), page, pageSize)
+	if typeFilter != "" && typeFilter != "client" && typeFilter != "supplier" {
+		RespondWithError(c, h.logger, customErrors.NewAppError(customErrors.ErrInvalidInput, "Parameter 'type' must be either 'client' or 'supplier'."))
+		return
+	}
+
+	list, totalCount, err := h.service.GetList(c.Request.Context(), page, pageSize, typeFilter)
 	if err != nil {
 		RespondWithError(c, h.logger, err)
 		return

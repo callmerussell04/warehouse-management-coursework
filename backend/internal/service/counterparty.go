@@ -15,7 +15,7 @@ type CounterpartyRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*model.Counterparty, error)
 	Update(ctx context.Context, c *model.Counterparty) error
 	Delete(ctx context.Context, id uuid.UUID) error
-	GetList(ctx context.Context, limit, offset int) ([]*model.Counterparty, int, error)
+	GetList(ctx context.Context, limit, offset int, typeFilter string) ([]*model.Counterparty, int, error)
 }
 
 type CounterpartyService struct {
@@ -90,7 +90,7 @@ func (s *CounterpartyService) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (s *CounterpartyService) GetList(ctx context.Context, page, pageSize int) ([]*model.Counterparty, int, error) {
+func (s *CounterpartyService) GetList(ctx context.Context, page, pageSize int, typeFilter string) ([]*model.Counterparty, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -104,11 +104,16 @@ func (s *CounterpartyService) GetList(ctx context.Context, page, pageSize int) (
 	limit := pageSize
 	offset := (page - 1) * pageSize
 
-	list, totalCount, err := s.repo.GetList(ctx, limit, offset)
+	list, totalCount, err := s.repo.GetList(ctx, limit, offset, typeFilter)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	s.logger.Info("counterparty list retrieved", "count", len(list), "total", totalCount, "page", page)
+	s.logger.Info("counterparty list retrieved",
+		"count", len(list),
+		"total", totalCount,
+		"page", page,
+		"type_filter", typeFilter,
+	)
 	return list, totalCount, nil
 }

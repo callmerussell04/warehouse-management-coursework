@@ -100,7 +100,7 @@ func (r *CounterpartyRepository) Delete(ctx context.Context, id uuid.UUID) error
 	return nil
 }
 
-func (r *CounterpartyRepository) GetList(ctx context.Context, limit, offset int) ([]*model.Counterparty, int, error) {
+func (r *CounterpartyRepository) GetList(ctx context.Context, limit, offset int, typeFilter string) ([]*model.Counterparty, int, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -108,13 +108,28 @@ func (r *CounterpartyRepository) GetList(ctx context.Context, limit, offset int)
 		offset = 0
 	}
 
-	query := `
-		SELECT id, name, type, phone_number, email
-		FROM counterparties 
-		ORDER BY name ASC 
-		LIMIT $1 OFFSET $2`
+	var rows *sql.Rows
+	var err error
 
-	rows, err := r.db.QueryContext(ctx, query, limit, offset)
+	if typeFilter != "" {
+		query := `
+			SELECT id, name, type, phone_number, email
+			FROM counterparties 
+			WHERE type = $1
+			ORDER BY name ASC 
+			LIMIT $2 OFFSET $3`
+
+		rows, err = r.db.QueryContext(ctx, query, typeFilter, limit, offset)
+	} else {
+		query := `
+			SELECT id, name, type, phone_number, email
+			FROM counterparties 
+			ORDER BY name ASC 
+			LIMIT $1 OFFSET $2`
+
+		rows, err = r.db.QueryContext(ctx, query, limit, offset)
+	}
+
 	if err != nil {
 		r.logger.Error("repository: failed to list counterparties", "error", err)
 		return nil, 0, customErrors.ErrInternal
@@ -138,10 +153,19 @@ func (r *CounterpartyRepository) GetList(ctx context.Context, limit, offset int)
 	}
 
 	var totalCount int
-	countQuery := "SELECT COUNT(id) FROM counterparties"
-	err = r.db.QueryRowContext(ctx, countQuery).Scan(&totalCount)
-	if err != nil {
-		r.logger.Error("repository: failed to count counterparties", "error", err)
+	var countQuery string
+	var countErr error
+
+	if typeFilter != "" {
+		countQuery = "SELECT COUNT(id) FROM counterparties WHERE type = $1"
+		countErr = r.db.QueryRowContext(ctx, countQuery, typeFilter).Scan(&totalCount)
+	} else {
+		countQuery = "SELECT COUNT(id) FROM counterparties"
+		countErr = r.db.QueryRowContext(ctx, countQuery).Scan(&totalCount)
+	}
+
+	if countErr != nil {
+		r.logger.Error("repository: failed to count counterparties", "error", countErr)
 		return nil, 0, customErrors.ErrInternal
 	}
 
