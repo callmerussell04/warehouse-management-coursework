@@ -19,7 +19,6 @@ components:
       name: refresh_token
 
   schemas:
-    # --- Common Schemas ---
     ErrorResponse:
       type: object
       properties:
@@ -42,7 +41,6 @@ components:
         total:
           type: integer
 
-    # --- Auth & User DTOs ---
     LoginRequest:
       type: object
       required: [username, password]
@@ -140,7 +138,6 @@ components:
           items:
             $ref: '#/components/schemas/UserResponse'
 
-    # --- Product DTOs ---
     CreateProductRequest:
       type: object
       required: [sku, name]
@@ -199,7 +196,6 @@ components:
           items:
             $ref: '#/components/schemas/ProductResponse'
 
-    # --- Counterparty DTOs ---
     CreateCounterpartyRequest:
       type: object
       required: [name, type]
@@ -253,7 +249,6 @@ components:
           items:
             $ref: '#/components/schemas/CounterpartyResponse'
 
-    # --- Order DTOs ---
     OrderItemRequest:
       type: object
       required: [product_id, quantity]
@@ -345,7 +340,6 @@ components:
           items:
             $ref: '#/components/schemas/OrderResponse'
 
-  # --- Standard Responses ---
   responses:
     BadRequest:
       description: Неверные параметры запроса (ErrInvalidInput или ошибка валидации JSON)
@@ -840,6 +834,11 @@ paths:
           schema:
             type: integer
             default: 10
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [client, supplier]
       responses:
         200:
           description: Список контрагентов
