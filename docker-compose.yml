@@ -30,14 +30,14 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./migrations:/migrations
+      - ./backend/migrations:/migrations
     command: ["-path", "/migrations", "-database", "postgres://postgres:postgres@db:5432/warehouse_db?sslmode=disable", "up"]
 
-  warehouse_management_system:
+  warehouse_management_system_backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
-    container_name: warehouse_management_system
+    container_name: warehouse_management_system_backend
     ports:
       - "8080:8080"
     env_file: ./backend/.env
@@ -50,3 +50,12 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+
+  warehouse_management_system_frontend:
+    build:
+      context: ./frontend/warehouse-management-system
+      dockerfile: Dockerfile
+    container_name: warehouse_management_system_frontend
+    env_file: ./frontend/warehouse-management-system/.env
+    ports:
+      - "5000:5000"
