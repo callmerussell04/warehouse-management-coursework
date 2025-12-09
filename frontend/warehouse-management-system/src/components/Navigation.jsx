@@ -18,11 +18,12 @@ const Navigation = () => {
                         {userRole === 'admin' &&
                             <Nav.Link as={Link} to="/users">Пользователи</Nav.Link>
                         }
+                        {user ? (<>
                         <Nav.Link as={Link} to="/products">Товары</Nav.Link>
                         <Nav.Link as={Link} to="/counterparties">Контрагенты</Nav.Link>
                         <Nav.Link as={Link} to="/orders">Заказы</Nav.Link>
-                        {user ? (
-                            <Nav.Link as={Link} to="/profile">Профиль</Nav.Link>
+                        <Nav.Link as={Link} to="/profile">Профиль</Nav.Link>
+                        </>
                         ) : (
                             <Nav.Link as={Link} to="/login">Вход</Nav.Link>
                         )}
