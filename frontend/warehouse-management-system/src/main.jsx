@@ -11,6 +11,7 @@ import ProfilePage from './pages/ProfilePage.jsx';
 import ForgotUsernamePage from './pages/ForgotUsernamePage.jsx';
 import ResetPasswordPage from './pages/ResetPasswordPage.jsx';
 import CounterpartiesPage from './pages/counterparties/CounterpartiesPage.jsx';
+import ProductsPage from './pages/products/ProductsPage.jsx';
 
 const routes = [
   {
@@ -37,6 +38,10 @@ const routes = [
   {
     path: '/counterparties',
     element: <CounterpartiesPage />,
+  },
+  {
+    path: '/products',
+    element: <ProductsPage />,
   },
 ];
 
