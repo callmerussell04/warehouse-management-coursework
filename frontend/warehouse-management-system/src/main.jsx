@@ -1,4 +1,5 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
+import 'bootstrap-icons/font/bootstrap-icons.css'
 import './index.css'
 import App from './App.jsx'
 import ReactDOM from 'react-dom/client'
@@ -12,6 +13,8 @@ import ForgotUsernamePage from './pages/ForgotUsernamePage.jsx';
 import ResetPasswordPage from './pages/ResetPasswordPage.jsx';
 import CounterpartiesPage from './pages/counterparties/CounterpartiesPage.jsx';
 import ProductsPage from './pages/products/ProductsPage.jsx';
+import UsersPage from './pages/users/UsersPage.jsx';
+import OrdersPage from './pages/orders/OrdersPage.jsx';
 
 const routes = [
   {
@@ -42,6 +45,14 @@ const routes = [
   {
     path: '/products',
     element: <ProductsPage />,
+  },
+  {
+    path: '/users',
+    element: <UsersPage />,
+  },
+  {
+    path: '/orders',
+    element: <OrdersPage />,
   },
 ];
 
