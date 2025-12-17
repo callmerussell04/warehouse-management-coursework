@@ -15,6 +15,7 @@ import CounterpartiesPage from './pages/counterparties/CounterpartiesPage.jsx';
 import ProductsPage from './pages/products/ProductsPage.jsx';
 import UsersPage from './pages/users/UsersPage.jsx';
 import OrdersPage from './pages/orders/OrdersPage.jsx';
+import ProductHistoryPage from './pages/products/ProductHistoryPage.jsx';
 
 const routes = [
   {
@@ -53,6 +54,10 @@ const routes = [
   {
     path: '/orders',
     element: <OrdersPage />,
+  },
+  {
+    path: '/products/:id/history',
+    element: <ProductHistoryPage />,
   },
 ];
 

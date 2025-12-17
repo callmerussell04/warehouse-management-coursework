@@ -3,8 +3,10 @@ import useProducts from './hooks/useProducts';
 import ProductModal from './form/ProductModal';
 import Pagination from '../../components/pagination/Pagination';
 import usePagination from '../../components/pagination/PaginationHook';
+import { useNavigate } from 'react-router-dom';
 
 const ProductsPage = () => {
+    const navigate = useNavigate();
     const { currentPage } = usePagination();
 
     const {
@@ -88,6 +90,15 @@ const ProductsPage = () => {
                                             {formatDate(item.updated_at)}
                                         </td>
                                         <td className="text-end pe-4">
+                                             <Button 
+                                                variant="outline-secondary" 
+                                                size="sm" 
+                                                className="me-2"
+                                                onClick={() => navigate(`/products/${item.id}/history`)}
+                                                title="История операций"
+                                            >
+                                                <i className="bi bi-clock-history"></i>
+                                            </Button>
                                             <Button 
                                                 variant="outline-primary" 
                                                 size="sm" 

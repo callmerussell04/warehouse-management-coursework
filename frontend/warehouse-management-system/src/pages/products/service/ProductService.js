@@ -1,5 +1,14 @@
 import ApiService from '../../../api/ApiService';
+import { ApiClient } from '../../../api/ApiClient';
 
-const ProductService = new ApiService('api/products');
+class ProductService extends ApiService {
+    constructor() {
+        super('api/products');
+    }
 
-export default ProductService;
+    async getHistory(id, params = {}) {
+        return ApiClient.get(`${this.url}/${id}/history`, { params });
+    }
+}
+
+export default new ProductService();
