@@ -894,6 +894,43 @@ paths:
         500:
           $ref: '#/components/responses/InternalError'
 
+  /api/reports/turnover:
+    get:
+      tags: [Reports]
+      summary: Скачать оборотно-сальдовую ведомость (PDF)
+      description: Генерирует PDF файл с движениями товаров за период.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: from
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Дата начала (YYYY-MM-DD)
+        - in: query
+          name: to
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Дата конца (YYYY-MM-DD)
+      responses:
+        200:
+          description: PDF файл
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        500:
+          $ref: '#/components/responses/InternalError'
+
   /api/counterparties:
     get:
       tags: [Counterparties]
