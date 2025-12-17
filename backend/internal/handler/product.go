@@ -22,6 +22,7 @@ type ProductService interface {
 	Update(ctx context.Context, id uuid.UUID, sku, name string) (*model.Product, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	ChangeStock(ctx context.Context, productID uuid.UUID, amount int, transactionType string) error
+	GetProductHistory(ctx context.Context, productID uuid.UUID, page, pageSize int, fromStr, toStr string) ([]*model.InventoryTransaction, int, error)
 }
 
 type ProductHandler struct {
@@ -171,4 +172,49 @@ func (h *ProductHandler) mapModelToResponse(p *model.Product) dto.ProductRespons
 		CreatedAt: p.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: p.UpdatedAt.Format(time.RFC3339),
 	}
+}
+
+func (h *ProductHandler) GetHistory(c *gin.Context) {
+	idStr := c.Param("id")
+	productID, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid UUID format"})
+		return
+	}
+
+	pageStr := c.DefaultQuery("page", "1")
+	pageSizeStr := c.DefaultQuery("pageSize", "10")
+	fromStr := c.Query("from")
+	toStr := c.Query("to")
+
+	page, _ := strconv.Atoi(pageStr)
+	pageSize, _ := strconv.Atoi(pageSizeStr)
+
+	history, total, err := h.service.GetProductHistory(c.Request.Context(), productID, page, pageSize, fromStr, toStr)
+	if err != nil {
+		RespondWithError(c, h.logger, err)
+		return
+	}
+
+	dtos := make([]dto.TransactionResponse, len(history))
+	for i, item := range history {
+		dtos[i] = dto.TransactionResponse{
+			ID:           item.ID.String(),
+			ProductID:    item.ProductID.String(),
+			ProductName:  item.ProductName,
+			Type:         string(item.Type),
+			Quantity:     item.Quantity,
+			BalanceAfter: item.BalanceAfter,
+			CreatedAt:    item.CreatedAt.Format(time.RFC3339),
+		}
+	}
+
+	c.JSON(http.StatusOK, dto.PagedTransactions{
+		Paging: dto.Paging{
+			Page:  page,
+			Size:  pageSize,
+			Total: total,
+		},
+		Items: dtos,
+	})
 }

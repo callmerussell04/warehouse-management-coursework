@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -167,49 +169,112 @@ func (r *ProductRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (r *ProductRepository) UpdateQuantity(ctx context.Context, id uuid.UUID, delta int) (int, error) {
-
+func (r *ProductRepository) UpdateStock(ctx context.Context, productID uuid.UUID, amount int, transType model.TransactionType) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, customErrors.ErrInternal
+		return customErrors.ErrInternal
 	}
 	defer tx.Rollback()
 
 	var currentQty int
-	err = tx.QueryRowContext(ctx, "SELECT quantity FROM products WHERE id = $1 FOR UPDATE", id).Scan(&currentQty)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, customErrors.ErrNotFound
-	}
+	err = tx.QueryRowContext(ctx, "SELECT quantity FROM products WHERE id = $1 FOR UPDATE", productID).Scan(&currentQty)
 	if err != nil {
-		return 0, customErrors.ErrInternal
-	}
-
-	newQty := currentQty + delta
-	if newQty < 0 {
-		return currentQty, customErrors.ErrInsufficientStock
-	}
-
-	_, err = tx.ExecContext(ctx, "UPDATE products SET quantity = $1, updated_at = NOW() WHERE id = $2", newQty, id)
-	if err != nil {
-		return 0, customErrors.ErrInternal
-	}
-
-	if err = tx.Commit(); err != nil {
-		return 0, customErrors.ErrInternal
-	}
-
-	return newQty, nil
-}
-
-func (r *ProductRepository) AddTransaction(ctx context.Context, t *model.InventoryTransaction) error {
-	query := `
-		INSERT INTO inventory_transactions (id, product_id, type, quantity, created_at) 
-		VALUES ($1, $2, $3, $4, $5)`
-
-	_, err := r.db.ExecContext(ctx, query, t.ID, t.ProductID, t.Type, t.Quantity, t.CreatedAt)
-	if err != nil {
-		r.logger.Error("repository: failed to add transaction", "error", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			return customErrors.ErrNotFound
+		}
 		return customErrors.ErrInternal
 	}
+
+	newQty := currentQty
+	switch transType {
+	case model.TransactionIncome:
+		newQty += amount
+	case model.TransactionExpense:
+		if currentQty < amount {
+			return customErrors.ErrInsufficientStock
+		}
+		newQty -= amount
+	default:
+		return customErrors.NewAppError(customErrors.ErrInvalidInput, "invalid transaction type")
+	}
+
+	_, err = tx.ExecContext(ctx, "UPDATE products SET quantity = $1, updated_at = NOW() WHERE id = $2", newQty, productID)
+	if err != nil {
+		return customErrors.ErrInternal
+	}
+
+	historyQuery := `
+		INSERT INTO inventory_transactions (id, product_id, type, quantity, balance_after, created_at)
+		VALUES ($1, $2, $3, $4, $5, NOW())
+	`
+	_, err = tx.ExecContext(ctx, historyQuery, uuid.New(), productID, transType, amount, newQty)
+	if err != nil {
+		r.logger.Error("failed to insert inventory transaction", "error", err)
+		return customErrors.ErrInternal
+	}
+
+	if err := tx.Commit(); err != nil {
+		return customErrors.ErrInternal
+	}
+
+	r.logger.Info("stock updated", "product_id", productID, "type", transType, "new_balance", newQty)
 	return nil
+}
+
+func (r *ProductRepository) GetProductHistory(ctx context.Context, productID uuid.UUID, limit, offset int, from, to time.Time) ([]*model.InventoryTransaction, int, error) {
+	baseQuery := `
+		SELECT it.id, it.product_id, p.name, it.type, it.quantity, it.balance_after, it.created_at
+		FROM inventory_transactions it
+		JOIN products p ON it.product_id = p.id
+		WHERE it.product_id = $1
+	`
+	countQuery := `SELECT COUNT(*) FROM inventory_transactions it WHERE it.product_id = $1`
+
+	args := []interface{}{productID}
+	argID := 2
+
+	if !from.IsZero() {
+		filter := fmt.Sprintf(" AND it.created_at >= $%d", argID)
+		baseQuery += filter
+		countQuery += filter
+		args = append(args, from)
+		argID++
+	}
+	if !to.IsZero() {
+		filter := fmt.Sprintf(" AND it.created_at <= $%d", argID)
+		baseQuery += filter
+		countQuery += filter
+		args = append(args, to)
+		argID++
+	}
+
+	baseQuery += fmt.Sprintf(" ORDER BY it.created_at DESC LIMIT $%d OFFSET $%d", argID, argID+1)
+
+	queryArgs := append(args, limit, offset)
+
+	rows, err := r.db.QueryContext(ctx, baseQuery, queryArgs...)
+	if err != nil {
+		r.logger.Error("failed to list product history", "error", err)
+		return nil, 0, customErrors.ErrInternal
+	}
+	defer rows.Close()
+
+	var list []*model.InventoryTransaction
+	for rows.Next() {
+		t := &model.InventoryTransaction{}
+		var typeStr string
+		if err := rows.Scan(&t.ID, &t.ProductID, &t.ProductName, &typeStr, &t.Quantity, &t.BalanceAfter, &t.CreatedAt); err != nil {
+			r.logger.Error("scan error", "error", err)
+			return nil, 0, customErrors.ErrInternal
+		}
+		t.Type = model.TransactionType(typeStr)
+		list = append(list, t)
+	}
+
+	var total int
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, customErrors.ErrInternal
+	}
+
+	return list, total, nil
 }

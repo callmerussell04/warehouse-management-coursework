@@ -98,13 +98,13 @@ func (s *OrderService) Update(ctx context.Context, id uuid.UUID, newStatus strin
 		return nil, err
 	}
 
-	status := model.OrderStatus(newStatus)
+	targetStatus := model.OrderStatus(newStatus)
 
 	if order.Status == model.StatusCanceled || order.Status == model.StatusCompleted {
 		return nil, fmt.Errorf("%w: cannot change status of a %s order", customErrors.ErrInvalidInput, order.Status)
 	}
 
-	if status == model.StatusCompleted && order.Status != model.StatusCompleted {
+	if targetStatus == model.StatusCompleted && order.Status != model.StatusCompleted {
 
 		transactionType := ""
 		switch order.OrderType {
@@ -117,23 +117,34 @@ func (s *OrderService) Update(ctx context.Context, id uuid.UUID, newStatus strin
 		}
 
 		if transactionType != "" {
-			for _, item := range order.Items {
+			for i, item := range order.Items {
 				err := s.productService.ChangeStock(ctx, item.ProductID, item.Quantity, transactionType)
 				if err != nil {
-					s.logger.Error("CRITICAL: failed to update stock for product", "order_id", id, "product_id", item.ProductID, "error", err)
-					return nil, fmt.Errorf("%w: failed to change stock for product %s during completion: %v", customErrors.ErrInternal, item.ProductID, err)
+					s.logger.Error("failed to update stock, attempting rollback", "order_id", id, "failed_item", item.ProductID)
+
+					rollbackType := "income"
+					if transactionType == "income" {
+						rollbackType = "expense"
+					}
+
+					for j := 0; j < i; j++ {
+						rollbackItem := order.Items[j]
+						_ = s.productService.ChangeStock(ctx, rollbackItem.ProductID, rollbackItem.Quantity, rollbackType)
+					}
+
+					return nil, fmt.Errorf("failed to process order items: %w", err)
 				}
 			}
-			s.logger.Info("Stock updated successfully for order completion", "order_id", id, "type", transactionType)
+			s.logger.Info("Stock updated successfully", "order_id", id)
 		}
 	}
 
-	order.Status = status
+	order.Status = targetStatus
 	order.UpdatedAt = time.Now()
 
 	if err := s.repo.Update(ctx, order); err != nil {
-		s.logger.Error("service: failed to update order in repo", "error", err)
-		return nil, err
+		s.logger.Error("CRITICAL: Stock updated but Order Status update failed", "order_id", id, "error", err)
+		return nil, fmt.Errorf("failed to update order status (data inconsistency potential): %w", err)
 	}
 
 	return order, nil

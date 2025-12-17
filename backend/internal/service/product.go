@@ -17,8 +17,8 @@ type ProductRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*model.Product, error)
 	Update(ctx context.Context, p *model.Product) error
 	Delete(ctx context.Context, id uuid.UUID) error
-	UpdateQuantity(ctx context.Context, id uuid.UUID, delta int) (int, error)
-	AddTransaction(ctx context.Context, t *model.InventoryTransaction) error
+	UpdateStock(ctx context.Context, productID uuid.UUID, amount int, transType model.TransactionType) error
+	GetProductHistory(ctx context.Context, productID uuid.UUID, limit, offset int, from, to time.Time) ([]*model.InventoryTransaction, int, error)
 }
 
 type ProductService struct {
@@ -111,39 +111,62 @@ func (s *ProductService) ChangeStock(ctx context.Context, productID uuid.UUID, a
 		return customErrors.ErrInvalidInput
 	}
 
-	var delta int
 	var tType model.TransactionType
-
 	switch transactionType {
 	case "income":
-		delta = amount
 		tType = model.TransactionIncome
 	case "expense":
-		delta = -amount
 		tType = model.TransactionExpense
 	default:
 		return customErrors.ErrInvalidInput
 	}
 
-	newQty, err := s.repo.UpdateQuantity(ctx, productID, delta)
-	if err != nil {
+	if err := s.repo.UpdateStock(ctx, productID, amount, tType); err != nil {
+		s.logger.Error("failed to update stock", "product_id", productID, "error", err)
 		return err
 	}
 
-	t := &model.InventoryTransaction{
-		ID:        uuid.New(),
-		ProductID: productID,
-		Type:      tType,
-		Quantity:  amount,
-		CreatedAt: time.Now(),
-	}
-
-	if err := s.repo.AddTransaction(ctx, t); err != nil {
-		s.logger.Error("CRITICAL: failed to log transaction after stock update",
-			"product_id", productID, "error", err)
-		return err
-	}
-
-	s.logger.Info("stock updated", "product_id", productID, "type", transactionType, "new_quantity", newQty)
 	return nil
+}
+
+func (s *ProductService) GetProductHistory(ctx context.Context, productID uuid.UUID, page, pageSize int, fromStr, toStr string) ([]*model.InventoryTransaction, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	limit := pageSize
+	offset := (page - 1) * pageSize
+
+	var from, to time.Time
+	var err error
+
+	if fromStr != "" {
+		from, err = time.Parse(time.DateOnly, fromStr)
+		if err != nil {
+			from, err = time.Parse(time.RFC3339, fromStr)
+			if err != nil {
+				return nil, 0, customErrors.NewAppError(customErrors.ErrInvalidInput, "Invalid 'from' format")
+			}
+		}
+	}
+	if toStr != "" {
+		to, err = time.Parse(time.DateOnly, toStr)
+		if err != nil {
+			to, err = time.Parse(time.RFC3339, toStr)
+			if err != nil {
+				return nil, 0, customErrors.NewAppError(customErrors.ErrInvalidInput, "Invalid 'to' format")
+			}
+		}
+		if to.Hour() == 0 && to.Minute() == 0 && to.Second() == 0 {
+			to = to.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+		}
+	}
+
+	return s.repo.GetProductHistory(ctx, productID, limit, offset, from, to)
 }
