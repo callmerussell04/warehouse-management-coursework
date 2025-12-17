@@ -51,6 +51,7 @@ func InitRoutes(r *gin.Engine, logger *slog.Logger, jwtSecret []byte, productH *
 		{
 			productsGroup.POST("", productH.Create)
 			productsGroup.GET("", productH.GetList)
+			productsGroup.GET("/:id/history", productH.GetHistory)
 			productsGroup.GET("/:id", productH.Get)
 			productsGroup.PUT("/:id", productH.Update)
 			productsGroup.DELETE("/:id", productH.Delete)

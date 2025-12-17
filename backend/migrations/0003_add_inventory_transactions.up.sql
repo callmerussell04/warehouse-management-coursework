@@ -5,5 +5,6 @@ CREATE TABLE inventory_transactions (
     product_id UUID REFERENCES products(id) ON DELETE CASCADE,
     type transaction_type NOT NULL,
     quantity INTEGER NOT NULL,
+    balance_after INTEGER NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

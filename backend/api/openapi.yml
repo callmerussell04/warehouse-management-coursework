@@ -769,6 +769,83 @@ paths:
         500:
           $ref: '#/components/responses/InternalError'
 
+  /api/products/{id}/history:
+    get:
+      tags: [Products]
+      summary: Получить историю движений конкретного товара
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            default: 10
+        - in: query
+          name: from
+          description: Дата начала (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          description: Дата конца (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+      responses:
+        200:
+          description: История операций товара
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  paging:
+                    $ref: '#/components/schemas/Paging'
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        product_id:
+                          type: string
+                          format: uuid
+                        product_name:
+                          type: string
+                        type:
+                          type: string
+                          enum: [income, expense]
+                        quantity:
+                          type: integer
+                        balance_after:
+                          type: integer
+                        created_at:
+                          type: string
+                          format: date-time
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalError'
+
   /api/products/{id}/stock:
     post:
       tags: [Products]

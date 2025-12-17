@@ -23,9 +23,11 @@ const (
 )
 
 type InventoryTransaction struct {
-	ID        uuid.UUID
-	ProductID uuid.UUID
-	Type      TransactionType
-	Quantity  int
-	CreatedAt time.Time
+	ID           uuid.UUID
+	ProductID    uuid.UUID
+	ProductName  string
+	Type         TransactionType
+	Quantity     int
+	BalanceAfter int
+	CreatedAt    time.Time
 }
