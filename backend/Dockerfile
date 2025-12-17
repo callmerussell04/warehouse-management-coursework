@@ -15,6 +15,7 @@ WORKDIR /app
 
 COPY --from=builder /app/warehouse_management_systsem .
 COPY --from=builder /app/api/openapi.yml ./api/openapi.yml
+COPY --from=builder /app/assets/arial.ttf ./assets/arial.ttf
 
 EXPOSE 8080
 
