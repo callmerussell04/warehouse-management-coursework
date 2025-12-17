@@ -11,7 +11,7 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
-func InitRoutes(r *gin.Engine, logger *slog.Logger, jwtSecret []byte, productH *ProductHandler, counterpartyH *CounterpartyHandler, orderH *OrderHandler, userH *UserHandler) {
+func InitRoutes(r *gin.Engine, logger *slog.Logger, jwtSecret []byte, productH *ProductHandler, counterpartyH *CounterpartyHandler, orderH *OrderHandler, userH *UserHandler, reportH *ReportHandler) {
 	r.StaticFile("/openapi.yml", "./api/openapi.yml")
 
 	docsUrl := ginSwagger.URL("/openapi.yml")
@@ -76,6 +76,12 @@ func InitRoutes(r *gin.Engine, logger *slog.Logger, jwtSecret []byte, productH *
 			orderGroup.GET("/:id", orderH.Get)
 			orderGroup.PUT("/:id", orderH.Update)
 			orderGroup.DELETE("/:id", orderH.Delete)
+		}
+
+		reports := api.Group("/reports")
+		reports.Use(middleware.RequireRole(model.RoleAdmin, model.RoleWorker))
+		{
+			reports.GET("/turnover", reportH.DownloadTurnoverReport)
 		}
 	}
 }

@@ -68,6 +68,7 @@ func Run() {
 	productRepository := repository.NewProductRepository(db, logger)
 	counterpartyRepository := repository.NewCounterpartyRepository(db, logger)
 	orderRepository := repository.NewOrderRepository(db, logger)
+	reportRepository := repository.NewReportRepository(db, logger)
 
 	emailService := service.NewSMTPNotificationService(logger)
 
@@ -76,6 +77,7 @@ func Run() {
 	productService := service.NewProductService(productRepository, logger)
 	counterpartyService := service.NewCounterpartyService(counterpartyRepository, logger)
 	orderService := service.NewOrderService(orderRepository, counterpartyService, productService, logger)
+	reportService := service.NewReportService(reportRepository, logger)
 
 	ctxInit, cancelInit := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelInit()
@@ -89,12 +91,13 @@ func Run() {
 	productHandler := handler.NewProductHandler(productService, logger)
 	counterpartyHandler := handler.NewCounterpartyHandler(counterpartyService, logger)
 	orderHandler := handler.NewOrderHandler(orderService, logger)
+	reportHandler := handler.NewReportHandler(reportService, logger)
 
 	router := gin.Default()
 
 	router.Use(middleware.CORSMiddleware())
 
-	handler.InitRoutes(router, logger, jwtSecret, productHandler, counterpartyHandler, orderHandler, userHandler)
+	handler.InitRoutes(router, logger, jwtSecret, productHandler, counterpartyHandler, orderHandler, userHandler, reportHandler)
 
 	srv := &http.Server{
 		Addr:    ":" + port,
