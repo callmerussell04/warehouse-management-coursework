@@ -16,6 +16,7 @@ import ProductsPage from './pages/products/ProductsPage.jsx';
 import UsersPage from './pages/users/UsersPage.jsx';
 import OrdersPage from './pages/orders/OrdersPage.jsx';
 import ProductHistoryPage from './pages/products/ProductHistoryPage.jsx';
+import ReportsPage from './pages/reports/ReportsPage.jsx';
 
 const routes = [
   {
@@ -58,6 +59,10 @@ const routes = [
   {
     path: '/products/:id/history',
     element: <ProductHistoryPage />,
+  },
+  {
+    path: '/reports',
+    element: <ReportsPage />,
   },
 ];
 

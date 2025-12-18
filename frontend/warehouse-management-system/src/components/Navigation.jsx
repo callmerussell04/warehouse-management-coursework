@@ -22,6 +22,7 @@ const Navigation = () => {
                         <Nav.Link as={Link} to="/products">Товары</Nav.Link>
                         <Nav.Link as={Link} to="/counterparties">Контрагенты</Nav.Link>
                         <Nav.Link as={Link} to="/orders">Заказы</Nav.Link>
+                        <Nav.Link as={Link} to="/reports">Отчеты</Nav.Link>
                         <Nav.Link as={Link} to="/profile">Профиль</Nav.Link>
                         </>
                         ) : (
