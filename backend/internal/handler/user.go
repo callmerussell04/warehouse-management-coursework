@@ -15,6 +15,7 @@ import (
 	"warehouse-management-system/internal/model"
 )
 
+//go:generate go run github.com/vektra/mockery/v2@latest --name=UserService --output=../../mocks --outpkg=mocks --with-expecter=true
 type UserService interface {
 	CreateUser(ctx context.Context, username, email, fullName, role string) (*model.User, error)
 	Login(ctx context.Context, username, password string) (accessToken, refreshToken string, user *model.User, err error)
