@@ -16,6 +16,7 @@ import (
 	"warehouse-management-system/internal/model"
 )
 
+//go:generate go run github.com/vektra/mockery/v2@latest --name=UserRepository --output=../../mocks --outpkg=mocks --with-expecter=true
 type UserRepository interface {
 	CreateUser(ctx context.Context, u *model.User) error
 	GetByUsername(ctx context.Context, username string) (*model.User, error)
@@ -27,12 +28,14 @@ type UserRepository interface {
 	GetList(ctx context.Context, limit, offset int) ([]*model.User, int, error)
 }
 
+//go:generate go run github.com/vektra/mockery/v2@latest --name=OTPRepository --output=../../mocks --outpkg=mocks --with-expecter=true
 type OTPRepository interface {
 	Save(ctx context.Context, email, code string, duration time.Duration) error
 	Get(ctx context.Context, email string) (string, error)
 	Delete(ctx context.Context, email string) error
 }
 
+//go:generate go run github.com/vektra/mockery/v2@latest --name=NotificationService --output=../../mocks --outpkg=mocks --with-expecter=true
 type NotificationService interface {
 	SendEmail(to, subject, body string) error
 }

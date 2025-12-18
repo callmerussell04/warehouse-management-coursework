@@ -10,6 +10,7 @@ import (
 	"warehouse-management-system/internal/model"
 )
 
+//go:generate go run github.com/vektra/mockery/v2@latest --name=CounterpartyRepository --output=../../mocks --outpkg=mocks --with-expecter=true
 type CounterpartyRepository interface {
 	Create(ctx context.Context, c *model.Counterparty) error
 	GetByID(ctx context.Context, id uuid.UUID) (*model.Counterparty, error)

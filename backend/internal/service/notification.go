@@ -6,6 +6,8 @@ import (
 	"os"
 )
 
+type sendMailFunc func(addr string, a smtp.Auth, from string, to []string, msg []byte) error
+
 type SMTPNotificationService struct {
 	host     string
 	port     string
@@ -13,6 +15,7 @@ type SMTPNotificationService struct {
 	password string
 	from     string
 	logger   *slog.Logger
+	SendMail sendMailFunc
 }
 
 func NewSMTPNotificationService(logger *slog.Logger) *SMTPNotificationService {
@@ -23,12 +26,13 @@ func NewSMTPNotificationService(logger *slog.Logger) *SMTPNotificationService {
 		password: os.Getenv("SMTP_PASSWORD"),
 		from:     os.Getenv("SMTP_FROM"),
 		logger:   logger,
+		SendMail: smtp.SendMail,
 	}
 }
 
 func (s *SMTPNotificationService) SendEmail(to, subject, body string) error {
 	if s.host == "" || s.username == "" {
-		s.logger.Info("[MOCK EMAIL] SMTP not configured", "to", to, "subject", subject, "body", body)
+		s.logger.Info("[MOCK EMAIL] SMTP not configured", "to", to, "subject", subject)
 		return nil
 	}
 
@@ -42,7 +46,7 @@ func (s *SMTPNotificationService) SendEmail(to, subject, body string) error {
 		"\r\n" +
 		body + "\r\n")
 
-	err := smtp.SendMail(address, auth, s.from, []string{to}, msg)
+	err := s.SendMail(address, auth, s.from, []string{to}, msg)
 	if err != nil {
 		s.logger.Error("failed to send email", "error", err, "to", to)
 		return err
