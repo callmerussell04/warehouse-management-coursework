@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
+//go:generate go run github.com/vektra/mockery/v2@latest --name=OrderRepository --output=../../mocks --outpkg=mocks --with-expecter=true
 type OrderRepository interface {
 	Create(ctx context.Context, order *model.Order) error
 	GetByID(ctx context.Context, id uuid.UUID) (*model.Order, error)
@@ -20,10 +21,12 @@ type OrderRepository interface {
 	GetList(ctx context.Context, limit, offset int) ([]*model.Order, int, error)
 }
 
+//go:generate go run github.com/vektra/mockery/v2@latest --name=OrderCounterpartyService --output=../../mocks --outpkg=mocks --with-expecter=true
 type OrderCounterpartyService interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*model.Counterparty, error)
 }
 
+//go:generate go run github.com/vektra/mockery/v2@latest --name=OrderProductService --output=../../mocks --outpkg=mocks --with-expecter=true
 type OrderProductService interface {
 	ChangeStock(ctx context.Context, productID uuid.UUID, amount int, transactionType string) error
 }

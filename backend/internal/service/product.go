@@ -11,6 +11,7 @@ import (
 	"warehouse-management-system/internal/model"
 )
 
+//go:generate go run github.com/vektra/mockery/v2@latest --name=ProductRepository --output=../../mocks --outpkg=mocks --with-expecter=true
 type ProductRepository interface {
 	Create(ctx context.Context, p *model.Product) error
 	GetList(ctx context.Context, limit, offset int) ([]*model.Product, int, error)

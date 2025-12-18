@@ -15,6 +15,7 @@ import (
 	"warehouse-management-system/internal/model"
 )
 
+//go:generate go run github.com/vektra/mockery/v2@latest --name=ProductService --output=../../mocks --outpkg=mocks --with-expecter=true
 type ProductService interface {
 	Create(ctx context.Context, sku, name string) (*model.Product, error)
 	GetList(ctx context.Context, page, pageSize int) ([]*model.Product, int, error)

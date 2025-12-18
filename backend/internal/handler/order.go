@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 )
 
+//go:generate go run github.com/vektra/mockery/v2@latest --name=OrderService --output=../../mocks --outpkg=mocks --with-expecter=true
 type OrderService interface {
 	Create(ctx context.Context, order *model.Order) (*model.Order, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*model.Order, error)

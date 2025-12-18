@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+//go:generate go run github.com/vektra/mockery/v2@latest --name=ReportService --output=../../mocks --outpkg=mocks --with-expecter=true
 type ReportService interface {
 	GenerateTurnoverPDF(ctx context.Context, fromStr, toStr string) ([]byte, error)
 }

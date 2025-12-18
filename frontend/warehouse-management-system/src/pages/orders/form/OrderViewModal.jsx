@@ -3,7 +3,6 @@ import { Modal, Button, Table, Badge, Spinner } from 'react-bootstrap';
 const OrderViewModal = ({ show, onHide, order, loading, onStatusChange, onDelete }) => {
     if (!order && !loading) return null;
 
-    // Обновленная функция для статусов
     const getStatusBadge = (status) => {
         const variantMap = {
             'pending': 'warning',
