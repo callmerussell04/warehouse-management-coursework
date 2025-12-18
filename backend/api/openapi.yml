@@ -1,0 +1,1237 @@
+openapi: 3.0.3
+info:
+  title: Warehouse Management System API
+  description: API для системы управления складом.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: refresh_token
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Сообщение об ошибке
+          example: "invalid input parameter"
+        details:
+          type: string
+          description: Детали ошибки (обычно при валидации JSON)
+          nullable: true
+
+    Paging:
+      type: object
+      properties:
+        page:
+          type: integer
+        size:
+          type: integer
+        total:
+          type: integer
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    LoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserResponse'
+
+    SendOTPRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    ForgotUsernameRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    ResetPasswordRequest:
+      type: object
+      required: [email, otp, new_password]
+      properties:
+        email:
+          type: string
+          format: email
+        otp:
+          type: string
+          minLength: 6
+          maxLength: 6
+        new_password:
+          type: string
+          minLength: 6
+
+    RefreshTokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+
+    CreateUserRequest:
+      type: object
+      required: [username, email, full_name, role]
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        role:
+          type: string
+          enum: [admin, worker]
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        role:
+          type: string
+        is_active:
+          type: boolean
+
+    PagedUsers:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/Paging'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserResponse'
+
+    CreateProductRequest:
+      type: object
+      required: [sku, name]
+      properties:
+        sku:
+          type: string
+        name:
+          type: string
+
+    UpdateProductRequest:
+      type: object
+      required: [sku, name]
+      properties:
+        sku:
+          type: string
+        name:
+          type: string
+
+    UpdateStockRequest:
+      type: object
+      required: [quantity, type]
+      properties:
+        quantity:
+          type: integer
+          minimum: 1
+        type:
+          type: string
+          enum: [income, expense]
+
+    ProductResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sku:
+          type: string
+        name:
+          type: string
+        quantity:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PagedProducts:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/Paging'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductResponse'
+
+    CreateCounterpartyRequest:
+      type: object
+      required: [name, type]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [client, supplier]
+        phone_number:
+          type: string
+        email:
+          type: string
+          format: email
+
+    UpdateCounterpartyRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        phone_number:
+          type: string
+        email:
+          type: string
+          format: email
+
+    CounterpartyResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+        phone_number:
+          type: string
+        email:
+          type: string
+          format: email
+
+    PagedCounterparties:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/Paging'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CounterpartyResponse'
+
+    OrderItemRequest:
+      type: object
+      required: [product_id, quantity]
+      properties:
+        product_id:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+
+    CreateOrderRequest:
+      type: object
+      required: [counterparty_id, order_type, order_date, items]
+      properties:
+        counterparty_id:
+          type: string
+          format: uuid
+        order_type:
+          type: string
+          enum: [inbound, outbound]
+        order_date:
+          type: string
+          format: date-time
+        destination:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItemRequest'
+
+    UpdateOrderRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [pending, processing, completed, canceled]
+
+    OrderItemResponse:
+      type: object
+      properties:
+        product_id:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+
+    OrderResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        counterparty_id:
+          type: string
+          format: uuid
+        order_type:
+          type: string
+        status:
+          type: string
+        order_date:
+          type: string
+          format: date-time
+        destination:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItemResponse'
+
+    PagedOrders:
+      type: object
+      properties:
+        total_count:
+          type: integer
+        page_size:
+          type: integer
+        page:
+          type: integer
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderResponse'
+
+  responses:
+    BadRequest:
+      description: Неверные параметры запроса (ErrInvalidInput или ошибка валидации JSON)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "invalid input parameter"
+    
+    Unauthorized:
+      description: Не авторизован (ErrUnauthorized)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "unauthorized"
+
+    Forbidden:
+      description: Нет прав доступа (недостаточно прав для роли)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Access denied: insufficient permissions"
+
+    NotFound:
+      description: Ресурс не найден (ErrNotFound)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "not found"
+
+    Conflict:
+      description: Конфликт данных (ErrAlreadyExists или ErrInsufficientStock)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "already exists"
+
+    InternalError:
+      description: Внутренняя ошибка сервера (ErrInternal или panic)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "internal server error"
+
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Аутентификация пользователя
+      description: Возвращает access token и устанавливает refresh token в HttpOnly cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        200:
+          description: Успешный вход
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Выход из системы
+      description: Удаляет refresh token cookie.
+      responses:
+        200:
+          description: Успешный выход
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Logged out successfully"
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Обновление Access Token
+      description: Требует наличия валидного refresh_token в Cookie.
+      security:
+        - CookieAuth: []
+      responses:
+        200:
+          description: Токен обновлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshTokenResponse'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+  /auth/request-otp:
+    post:
+      tags: [Auth]
+      summary: Запрос OTP кода
+      description: Отправляет OTP код на email (если пользователь существует) для сброса пароля.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendOTPRequest'
+      responses:
+        200:
+          description: Запрос принят (всегда возвращает 200 для безопасности)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        400:
+          $ref: '#/components/responses/BadRequest'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+  /auth/forgot-username:
+    post:
+      tags: [Auth]
+      summary: Восстановление имени пользователя
+      description: Отправляет username на email (если пользователь существует).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotUsernameRequest'
+      responses:
+        200:
+          description: Запрос принят
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        400:
+          $ref: '#/components/responses/BadRequest'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Сброс пароля
+      description: Сбрасывает пароль с использованием OTP кода.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        200:
+          description: Пароль успешно обновлен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        400:
+          $ref: '#/components/responses/BadRequest'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+  /api/users:
+    get:
+      tags: [Users]
+      summary: Получить список пользователей
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            default: 10
+      responses:
+        200:
+          description: Список пользователей
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedUsers'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags: [Users]
+      summary: Создать пользователя
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        201:
+          description: Пользователь создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        409:
+          $ref: '#/components/responses/Conflict'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+  /api/users/{id}:
+    delete:
+      tags: [Users]
+      summary: Удалить пользователя
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        204:
+          description: Пользователь удален
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+  /api/products:
+    get:
+      tags: [Products]
+      summary: Получить список товаров
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            default: 10
+      responses:
+        200:
+          description: Список товаров
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedProducts'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags: [Products]
+      summary: Создать товар
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        201:
+          description: Товар создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        409:
+          $ref: '#/components/responses/Conflict'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+  /api/products/{id}:
+    get:
+      tags: [Products]
+      summary: Получить товар по ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        200:
+          description: Данные товара
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags: [Products]
+      summary: Обновить товар
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
+      responses:
+        200:
+          description: Товар обновлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags: [Products]
+      summary: Удалить товар
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        204:
+          description: Товар удален
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+  /api/products/{id}/history:
+    get:
+      tags: [Products]
+      summary: Получить историю движений конкретного товара
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            default: 10
+        - in: query
+          name: from
+          description: Дата начала (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: to
+          description: Дата конца (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+      responses:
+        200:
+          description: История операций товара
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  paging:
+                    $ref: '#/components/schemas/Paging'
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        product_id:
+                          type: string
+                          format: uuid
+                        product_name:
+                          type: string
+                        type:
+                          type: string
+                          enum: [income, expense]
+                        quantity:
+                          type: integer
+                        balance_after:
+                          type: integer
+                        created_at:
+                          type: string
+                          format: date-time
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+  /api/products/{id}/stock:
+    post:
+      tags: [Products]
+      summary: Изменить количество товара (приход/расход)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStockRequest'
+      responses:
+        200:
+          description: Сток обновлен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          $ref: '#/components/responses/NotFound'
+        409:
+          description: Недостаточно товара на складе (ErrInsufficientStock)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "insufficient stock"
+        500:
+          $ref: '#/components/responses/InternalError'
+
+  /api/reports/turnover:
+    get:
+      tags: [Reports]
+      summary: Скачать оборотно-сальдовую ведомость (PDF)
+      description: Генерирует PDF файл с движениями товаров за период.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: from
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Дата начала (YYYY-MM-DD)
+        - in: query
+          name: to
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Дата конца (YYYY-MM-DD)
+      responses:
+        200:
+          description: PDF файл
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+  /api/counterparties:
+    get:
+      tags: [Counterparties]
+      summary: Получить список контрагентов
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            default: 10
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [client, supplier]
+      responses:
+        200:
+          description: Список контрагентов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedCounterparties'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags: [Counterparties]
+      summary: Создать контрагента
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCounterpartyRequest'
+      responses:
+        201:
+          description: Контрагент создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CounterpartyResponse'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        409:
+          $ref: '#/components/responses/Conflict'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+  /api/counterparties/{id}:
+    get:
+      tags: [Counterparties]
+      summary: Получить контрагента по ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        200:
+          description: Данные контрагента
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CounterpartyResponse'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags: [Counterparties]
+      summary: Обновить контрагента
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCounterpartyRequest'
+      responses:
+        200:
+          description: Контрагент обновлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CounterpartyResponse'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags: [Counterparties]
+      summary: Удалить контрагента
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        204:
+          description: Контрагент удален
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+  /api/orders:
+    get:
+      tags: [Orders]
+      summary: Получить список заказов
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            default: 10
+      responses:
+        200:
+          description: Список заказов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedOrders'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags: [Orders]
+      summary: Создать заказ
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        201:
+          description: Заказ создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          description: Контрагент или товар не найден (ErrNotFound)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        409:
+          description: Недостаточно товара (ErrInsufficientStock)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+  /api/orders/{id}:
+    get:
+      tags: [Orders]
+      summary: Получить заказ по ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        200:
+          description: Данные заказа
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags: [Orders]
+      summary: Обновить статус заказа
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrderRequest'
+      responses:
+        200:
+          description: Статус заказа обновлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags: [Orders]
+      summary: Удалить заказ
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        204:
+          description: Заказ удален
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalError'

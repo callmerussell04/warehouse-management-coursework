@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: warehouse_db
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8.4-alpine
+    container_name: redis_cache
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 3s
+      retries: 5
+
+  migrate:
+    image: migrate/migrate
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend/migrations:/migrations
+    command: ["-path", "/migrations", "-database", "postgres://postgres:postgres@db:5432/warehouse_db?sslmode=disable", "up"]
+
+  warehouse_management_system_backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: warehouse_management_system_backend
+    ports:
+      - "8080:8080"
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/warehouse_db?sslmode=disable
+      HTTP_PORT: 8080
+      REDIS_URL: redis:6379
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  warehouse_management_system_frontend:
+    build:
+      context: ./frontend/warehouse-management-system
+      dockerfile: Dockerfile
+    container_name: warehouse_management_system_frontend
+    env_file: ./frontend/warehouse-management-system/.env
+    ports:
+      - "5000:5000"

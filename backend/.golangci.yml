@@ -1,0 +1,21 @@
+version: "2"
+run:
+  timeout: 3m
+  skip-dirs:
+    - mocks
+    - migrations
+
+output:
+  sort-results: true
+
+linters:
+  disable: errcheck
+  enable:
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+
+issues:
+  max-issues-per-linter: 20
+  max-issues: 50
