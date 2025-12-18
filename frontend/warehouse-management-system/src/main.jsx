@@ -18,12 +18,9 @@ import OrdersPage from './pages/orders/OrdersPage.jsx';
 import ProductHistoryPage from './pages/products/ProductHistoryPage.jsx';
 import ReportsPage from './pages/reports/ReportsPage.jsx';
 
+import { ProtectedRoute, AdminRoute } from './components/AuthGuard';
+
 const routes = [
-  {
-    index: true,
-    path: '/',
-    element: <Homepage />,
-  },
   {
     path: '/login',
     element: <LoginPage />,
@@ -36,33 +33,72 @@ const routes = [
     path: '/reset-password',
     element: <ResetPasswordPage />,
   },
+
+  {
+    index: true,
+    path: '/',
+    element: (
+      <ProtectedRoute>
+        <Homepage />
+      </ProtectedRoute>
+    ),
+  },
   {
     path: '/profile',
-    element: <ProfilePage />,
+    element: (
+      <ProtectedRoute>
+        <ProfilePage />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/counterparties',
-    element: <CounterpartiesPage />,
+    element: (
+      <ProtectedRoute>
+        <CounterpartiesPage />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/products',
-    element: <ProductsPage />,
-  },
-  {
-    path: '/users',
-    element: <UsersPage />,
+    element: (
+      <ProtectedRoute>
+        <ProductsPage />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/orders',
-    element: <OrdersPage />,
+    element: (
+      <ProtectedRoute>
+        <OrdersPage />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/products/:id/history',
-    element: <ProductHistoryPage />,
+    element: (
+      <ProtectedRoute>
+        <ProductHistoryPage />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '/reports',
-    element: <ReportsPage />,
+    element: (
+      <ProtectedRoute>
+        <ReportsPage />
+      </ProtectedRoute>
+    ),
+  },
+
+  {
+    path: '/users',
+    element: (
+      <AdminRoute>
+        <UsersPage />
+      </AdminRoute>
+    ),
   },
 ];
 

@@ -14,11 +14,11 @@ const Navigation = () => {
                 <Navbar.Toggle aria-controls="basic-navbar-nav" />
                 <Navbar.Collapse id="basic-navbar-nav">
                 <Nav className="me-auto">
+                        {user ? (<>
                         <Nav.Link as={Link} to="/">Главная</Nav.Link>
                         {userRole === 'admin' &&
                             <Nav.Link as={Link} to="/users">Пользователи</Nav.Link>
                         }
-                        {user ? (<>
                         <Nav.Link as={Link} to="/products">Товары</Nav.Link>
                         <Nav.Link as={Link} to="/counterparties">Контрагенты</Nav.Link>
                         <Nav.Link as={Link} to="/orders">Заказы</Nav.Link>

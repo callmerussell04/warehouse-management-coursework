@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 const LoginPage = () => {
     return (
-        <div className="d-flex flex-column justify-content-center align-items-center">
+        <div className="flex-grow-1 d-flex flex-column justify-content-center align-items-center">
             <AuthForm />
             <div className="mt-3 d-flex flex-column justify-content-center align-items-center">
                 <Link to="/forgot-username" className="text-decoration-none">
