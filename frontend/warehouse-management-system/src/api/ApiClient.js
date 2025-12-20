@@ -28,6 +28,13 @@ function responseHandler(response) {
         if (response.status === 204) {
             return null;
         }
+
+        const contentType = response.headers?.['content-type']?.toLowerCase() || '';
+        const expectsBlob = response.config?.responseType === 'blob';
+        if (!expectsBlob && contentType.includes('text/html')) {
+            throw new HttpError('API Error. Unexpected HTML response!');
+        }
+
         const data = response?.data;
         if (!data) {
             throw new HttpError('API Error. No data!');
@@ -46,7 +53,7 @@ function responseErrorHandler(error) {
     return Promise.reject(error.message);
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, '') || window.location.origin;
 
 export const ApiClient = axios.create({
     baseURL: API_BASE_URL,
@@ -83,9 +90,13 @@ ApiClient.interceptors.request.use(
 ApiClient.interceptors.response.use(
     responseHandler,
     async (error) => {
-        const originalRequest = error.config;
+        const originalRequest = error.config ?? {};
 
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        if (
+            error.response?.status === 401 &&
+            !originalRequest._retry &&
+            !originalRequest.skipAuthRefresh
+        ) {
             originalRequest._retry = true;
 
             if (isRefreshing) {
@@ -122,6 +133,10 @@ ApiClient.interceptors.response.use(
             } finally {
                 isRefreshing = false;
             }
+        }
+
+        if (originalRequest.suppressErrorToast) {
+            return Promise.reject(error);
         }
 
         return responseErrorHandler(error);

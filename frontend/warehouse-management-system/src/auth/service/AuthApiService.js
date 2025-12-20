@@ -4,7 +4,10 @@ class AuthApiService {
     url = 'auth';
 
     async login(body) {
-        return ApiClient.post(`${this.url}/login`, body);
+        return ApiClient.post(`${this.url}/login`, body, {
+            skipAuthRefresh: true,
+            suppressErrorToast: true,
+        });
     }
 
     async logout() {

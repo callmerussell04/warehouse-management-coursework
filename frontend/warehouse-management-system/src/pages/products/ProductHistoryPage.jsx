@@ -1,11 +1,11 @@
-import { Container, Row, Col, Card, Table, Spinner, Form, Button, Badge, Tab, Tabs } from 'react-bootstrap';
+import { Container, Row, Col, Card, Table, Spinner, Form, Button, Badge, Tab, Tabs, Alert } from 'react-bootstrap';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import useProductHistory from './hooks/useProductHistory';
 import Pagination from '../../components/pagination/Pagination';
 
 const ProductHistoryPage = () => {
-    const [searchParams, setSearchParams] = useSearchParams();
+    const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     
     const currentPage = parseInt(searchParams.get('page')) || 1;
@@ -15,6 +15,7 @@ const ProductHistoryPage = () => {
         historyItems,
         paging,
         loading,
+        error,
         dateFrom,
         setDateFrom,
         dateTo,
@@ -72,6 +73,8 @@ const ProductHistoryPage = () => {
                     </Col>
                 </Row>
             </div>
+
+            {error && <Alert variant="danger">{error}</Alert>}
 
             <Card className="shadow-sm border-0 rounded-4 overflow-hidden">
                 <Card.Body>
