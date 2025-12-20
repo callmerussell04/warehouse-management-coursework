@@ -4,7 +4,7 @@ info:
   description: API для системы управления складом.
   version: 1.0.0
 servers:
-  - url: http://localhost:8080
+  - url: http://localhost
     description: Local development server
 
 components:
@@ -47,8 +47,10 @@ components:
       properties:
         username:
           type: string
+          maxLength: 255
         password:
           type: string
+          maxLength: 72
 
     LoginResponse:
       type: object
@@ -65,6 +67,7 @@ components:
         email:
           type: string
           format: email
+          maxLength: 254
 
     ForgotUsernameRequest:
       type: object
@@ -73,6 +76,7 @@ components:
         email:
           type: string
           format: email
+          maxLength: 254
 
     ResetPasswordRequest:
       type: object
@@ -81,13 +85,15 @@ components:
         email:
           type: string
           format: email
+          maxLength: 254
         otp:
           type: string
           minLength: 6
           maxLength: 6
         new_password:
           type: string
-          minLength: 6
+          minLength: 12
+          maxLength: 72
 
     RefreshTokenResponse:
       type: object
@@ -101,11 +107,16 @@ components:
       properties:
         username:
           type: string
+          minLength: 1
+          maxLength: 255
         email:
           type: string
           format: email
+          maxLength: 254
         full_name:
           type: string
+          minLength: 1
+          maxLength: 255
         role:
           type: string
           enum: [admin, worker]
@@ -144,8 +155,12 @@ components:
       properties:
         sku:
           type: string
+          minLength: 1
+          maxLength: 128
         name:
           type: string
+          minLength: 1
+          maxLength: 255
 
     UpdateProductRequest:
       type: object
@@ -153,8 +168,12 @@ components:
       properties:
         sku:
           type: string
+          minLength: 1
+          maxLength: 128
         name:
           type: string
+          minLength: 1
+          maxLength: 255
 
     UpdateStockRequest:
       type: object
@@ -162,6 +181,7 @@ components:
       properties:
         quantity:
           type: integer
+          format: int64
           minimum: 1
         type:
           type: string
@@ -179,6 +199,7 @@ components:
           type: string
         quantity:
           type: integer
+          format: int64
         created_at:
           type: string
           format: date-time
@@ -202,14 +223,18 @@ components:
       properties:
         name:
           type: string
+          minLength: 1
+          maxLength: 255
         type:
           type: string
           enum: [client, supplier]
         phone_number:
           type: string
+          maxLength: 50
         email:
           type: string
           format: email
+          maxLength: 254
 
     UpdateCounterpartyRequest:
       type: object
@@ -217,11 +242,15 @@ components:
       properties:
         name:
           type: string
+          minLength: 1
+          maxLength: 255
         phone_number:
           type: string
+          maxLength: 50
         email:
           type: string
           format: email
+          maxLength: 254
 
     CounterpartyResponse:
       type: object
@@ -258,6 +287,8 @@ components:
           format: uuid
         quantity:
           type: integer
+          format: int64
+          minimum: 1
 
     CreateOrderRequest:
       type: object
@@ -274,9 +305,13 @@ components:
           format: date-time
         destination:
           type: string
+          maxLength: 255
           nullable: true
         items:
           type: array
+          minItems: 1
+          maxItems: 100
+          description: Идентификаторы товаров в заказе должны быть уникальными.
           items:
             $ref: '#/components/schemas/OrderItemRequest'
 
@@ -286,7 +321,7 @@ components:
       properties:
         status:
           type: string
-          enum: [pending, processing, completed, canceled]
+          enum: [processing, completed, canceled]
 
     OrderItemResponse:
       type: object
@@ -296,6 +331,7 @@ components:
           format: uuid
         quantity:
           type: integer
+          format: int64
 
     OrderResponse:
       type: object
@@ -386,6 +422,20 @@ components:
           example:
             error: "already exists"
 
+    TooManyRequests:
+      description: Превышен лимит запросов. В ответе присутствует заголовок Retry-After.
+      headers:
+        Retry-After:
+          description: Число секунд до следующей допустимой попытки
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "too many requests"
+
     InternalError:
       description: Внутренняя ошибка сервера (ErrInternal или panic)
       content:
@@ -400,7 +450,7 @@ paths:
     post:
       tags: [Auth]
       summary: Аутентификация пользователя
-      description: Возвращает access token и устанавливает refresh token в HttpOnly cookie.
+      description: Возвращает JWT access token на 15 минут и устанавливает непрозрачный refresh token в HttpOnly cookie.
       requestBody:
         required: true
         content:
@@ -418,6 +468,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         401:
           $ref: '#/components/responses/Unauthorized'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
         500:
           $ref: '#/components/responses/InternalError'
 
@@ -425,7 +477,9 @@ paths:
     post:
       tags: [Auth]
       summary: Выход из системы
-      description: Удаляет refresh token cookie.
+      description: Отзывает серверную refresh-сессию и удаляет refresh token cookie.
+      security:
+        - CookieAuth: []
       responses:
         200:
           description: Успешный выход
@@ -442,7 +496,7 @@ paths:
     post:
       tags: [Auth]
       summary: Обновление Access Token
-      description: Требует наличия валидного refresh_token в Cookie.
+      description: Атомарно поглощает текущую refresh-сессию, выдает новый access token и заменяет refresh_token в HttpOnly cookie. Повторное использование старого refresh token невозможно.
       security:
         - CookieAuth: []
       responses:
@@ -480,6 +534,8 @@ paths:
                     type: string
         400:
           $ref: '#/components/responses/BadRequest'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
         500:
           $ref: '#/components/responses/InternalError'
 
@@ -506,6 +562,8 @@ paths:
                     type: string
         400:
           $ref: '#/components/responses/BadRequest'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
         500:
           $ref: '#/components/responses/InternalError'
 
@@ -532,6 +590,8 @@ paths:
                     type: string
         400:
           $ref: '#/components/responses/BadRequest'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
         500:
           $ref: '#/components/responses/InternalError'
 
@@ -552,6 +612,8 @@ paths:
           schema:
             type: integer
             default: 10
+            minimum: 1
+            maximum: 100
       responses:
         200:
           description: Список пользователей
@@ -641,6 +703,8 @@ paths:
           schema:
             type: integer
             default: 10
+            minimum: 1
+            maximum: 100
       responses:
         200:
           description: Список товаров
@@ -766,6 +830,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         404:
           $ref: '#/components/responses/NotFound'
+        409:
+          $ref: '#/components/responses/Conflict'
         500:
           $ref: '#/components/responses/InternalError'
 
@@ -792,6 +858,8 @@ paths:
           schema:
             type: integer
             default: 10
+            minimum: 1
+            maximum: 100
         - in: query
           name: from
           description: Дата начала (YYYY-MM-DD)
@@ -832,8 +900,10 @@ paths:
                           enum: [income, expense]
                         quantity:
                           type: integer
+                          format: int64
                         balance_after:
                           type: integer
+                          format: int64
                         created_at:
                           type: string
                           format: date-time
@@ -948,6 +1018,8 @@ paths:
           schema:
             type: integer
             default: 10
+            minimum: 1
+            maximum: 100
         - in: query
           name: type
           schema:
@@ -1078,6 +1150,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         404:
           $ref: '#/components/responses/NotFound'
+        409:
+          $ref: '#/components/responses/Conflict'
         500:
           $ref: '#/components/responses/InternalError'
 
@@ -1098,6 +1172,8 @@ paths:
           schema:
             type: integer
             default: 10
+            minimum: 1
+            maximum: 100
       responses:
         200:
           description: Список заказов
@@ -1209,6 +1285,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         404:
           $ref: '#/components/responses/NotFound'
+        409:
+          $ref: '#/components/responses/Conflict'
         500:
           $ref: '#/components/responses/InternalError'
 
