@@ -3,8 +3,10 @@ package handler
 import (
 	"context"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -22,18 +24,27 @@ type UserService interface {
 	RecoverUsername(ctx context.Context, email string) error
 	GenerateAndSendOTP(ctx context.Context, email string) error
 	ResetPassword(ctx context.Context, email, code, newPassword string) error
-	RefreshToken(ctx context.Context, tokenString string) (string, error)
+	RefreshToken(ctx context.Context, tokenString string) (string, string, error)
+	Logout(ctx context.Context, refreshToken string) error
 	GetList(ctx context.Context, page, pageSize int) ([]*model.User, int, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
-type UserHandler struct {
-	service UserService
-	logger  *slog.Logger
+type RateLimiter interface {
+	Allow(ctx context.Context, identity string, limit int64, window time.Duration) (bool, time.Duration, error)
 }
 
-func NewUserHandler(service UserService, logger *slog.Logger) *UserHandler {
-	return &UserHandler{service: service, logger: logger}
+//go:generate go run github.com/vektra/mockery/v2@latest --name=RateLimiter --output=../../mocks --outpkg=mocks --with-expecter=true
+
+type UserHandler struct {
+	service      UserService
+	rateLimiter  RateLimiter
+	cookieSecure bool
+	logger       *slog.Logger
+}
+
+func NewUserHandler(service UserService, rateLimiter RateLimiter, cookieSecure bool, logger *slog.Logger) *UserHandler {
+	return &UserHandler{service: service, rateLimiter: rateLimiter, cookieSecure: cookieSecure, logger: logger}
 }
 
 func (h *UserHandler) mapUserToResponse(u *model.User) dto.UserResponse {
@@ -64,6 +75,9 @@ func (h *UserHandler) Create(c *gin.Context) {
 }
 
 func (h *UserHandler) Login(c *gin.Context) {
+	if !h.enforceRateLimit(c, "login:ip:"+c.ClientIP(), 10, time.Minute) {
+		return
+	}
 	var req dto.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -76,16 +90,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
-	const refreshCookieDuration = 7 * 24 * time.Hour
-	c.SetCookie(
-		"refresh_token",
-		refreshToken,
-		int(refreshCookieDuration.Seconds()),
-		"/",
-		c.Request.Host,
-		true,
-		true,
-	)
+	h.setRefreshCookie(c, refreshToken, 7*24*time.Hour)
 
 	c.JSON(http.StatusOK, dto.LoginResponse{
 		AccessToken: accessToken,
@@ -94,15 +99,15 @@ func (h *UserHandler) Login(c *gin.Context) {
 }
 
 func (h *UserHandler) Logout(c *gin.Context) {
-	c.SetCookie(
-		"refresh_token",
-		"",
-		-1,
-		"/",
-		c.Request.Host,
-		true,
-		true,
-	)
+	refreshToken, err := c.Cookie("refresh_token")
+	if err == nil {
+		if err := h.service.Logout(c.Request.Context(), refreshToken); err != nil {
+			h.clearRefreshCookie(c)
+			RespondWithError(c, h.logger, err)
+			return
+		}
+	}
+	h.clearRefreshCookie(c)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }
@@ -112,6 +117,9 @@ func (h *UserHandler) ForgotUsername(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid email format"})
+		return
+	}
+	if !h.enforceRecoveryRateLimits(c, "forgot-username", req.Email) {
 		return
 	}
 
@@ -130,17 +138,23 @@ func (h *UserHandler) RequestOTP(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if !h.enforceRecoveryRateLimits(c, "request-otp", req.Email) {
+		return
+	}
 
 	err := h.service.GenerateAndSendOTP(c.Request.Context(), req.Email)
 
 	if err != nil {
-		h.logger.Error("OTP generation failed", "error", err, "email", req.Email)
+		h.logger.Error("OTP generation failed", "error", err)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "If the user exists, an OTP has been sent to the email."})
 }
 
 func (h *UserHandler) ResetPassword(c *gin.Context) {
+	if !h.enforceRateLimit(c, "reset-password:ip:"+c.ClientIP(), 10, 15*time.Minute) {
+		return
+	}
 	var req dto.ResetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -163,24 +177,75 @@ func (h *UserHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	newAccessToken, err := h.service.RefreshToken(c.Request.Context(), refreshToken)
+	newAccessToken, newRefreshToken, err := h.service.RefreshToken(c.Request.Context(), refreshToken)
 	if err != nil {
-		c.SetCookie("refresh_token", "", -1, "/", c.Request.Host, true, true)
+		h.clearRefreshCookie(c)
 		RespondWithError(c, h.logger, customErrors.ErrUnauthorized)
 		return
 	}
+	h.setRefreshCookie(c, newRefreshToken, 7*24*time.Hour)
 
 	c.JSON(http.StatusOK, dto.RefreshTokenResponse{
 		AccessToken: newAccessToken,
 	})
 }
 
-func (h *UserHandler) GetList(c *gin.Context) {
-	pageStr := c.DefaultQuery("page", "1")
-	pageSizeStr := c.DefaultQuery("pageSize", "10")
+func (h *UserHandler) setRefreshCookie(c *gin.Context, value string, ttl time.Duration) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    value,
+		Path:     "/auth",
+		MaxAge:   int(ttl.Seconds()),
+		HttpOnly: true,
+		Secure:   h.cookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
 
-	page, _ := strconv.Atoi(pageStr)
-	pageSize, _ := strconv.Atoi(pageSizeStr)
+func (h *UserHandler) clearRefreshCookie(c *gin.Context) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "refresh_token",
+		Path:     "/auth",
+		MaxAge:   -1,
+		Expires:  time.Unix(1, 0),
+		HttpOnly: true,
+		Secure:   h.cookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func (h *UserHandler) enforceRecoveryRateLimits(c *gin.Context, action, email string) bool {
+	if !h.enforceRateLimit(c, action+":ip:"+c.ClientIP(), 5, 15*time.Minute) {
+		return false
+	}
+	identity := action + ":email:" + strings.ToLower(strings.TrimSpace(email))
+	return h.enforceRateLimit(c, identity, 3, 15*time.Minute)
+}
+
+func (h *UserHandler) enforceRateLimit(c *gin.Context, identity string, limit int64, window time.Duration) bool {
+	allowed, retryAfter, err := h.rateLimiter.Allow(c.Request.Context(), identity, limit, window)
+	if err != nil {
+		RespondWithError(c, h.logger, err)
+		return false
+	}
+	if allowed {
+		return true
+	}
+	seconds := int(math.Ceil(retryAfter.Seconds()))
+	if seconds < 1 {
+		seconds = 1
+	}
+	c.Header("Retry-After", strconv.Itoa(seconds))
+	c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "Too many requests"})
+	return false
+}
+
+func (h *UserHandler) GetList(c *gin.Context) {
+	page, pageSize, err := parsePaging(c)
+	if err != nil {
+		RespondWithError(c, h.logger, err)
+		return
+	}
 
 	users, totalCount, err := h.service.GetList(c.Request.Context(), page, pageSize)
 	if err != nil {

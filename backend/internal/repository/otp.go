@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"time"
@@ -21,45 +23,53 @@ func NewRedisOTPRepository(client *redis.Client, logger *slog.Logger) *RedisOTPR
 }
 
 func (r *RedisOTPRepository) key(email string) string {
-	return fmt.Sprintf("otp:%s", email)
+	sum := sha256.Sum256([]byte(email))
+	return fmt.Sprintf("otp:%s", hex.EncodeToString(sum[:]))
 }
 
 func (r *RedisOTPRepository) Save(ctx context.Context, email, code string, duration time.Duration) error {
 	key := r.key(email)
 
-	err := r.client.Set(ctx, key, code, duration).Err()
+	_, err := r.client.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.Set(ctx, key, code, duration)
+		pipe.Del(ctx, key+":attempts")
+		return nil
+	})
 	if err != nil {
-		r.logger.Error("repo: failed to save OTP to Redis", "error", err, "key", key)
+		r.logger.Error("repo: failed to save OTP to Redis", "error", err)
 		return customErrors.ErrInternal
 	}
 	return nil
 }
 
-func (r *RedisOTPRepository) Get(ctx context.Context, email string) (string, error) {
+var verifyOTPScript = redis.NewScript(`
+local value = redis.call("GET", KEYS[1])
+if not value then
+    return -1
+end
+if value == ARGV[1] then
+    redis.call("DEL", KEYS[1], KEYS[2])
+    return 1
+end
+local attempts = redis.call("INCR", KEYS[2])
+if attempts == 1 then
+    redis.call("PEXPIRE", KEYS[2], redis.call("PTTL", KEYS[1]))
+end
+if attempts >= tonumber(ARGV[2]) then
+    redis.call("DEL", KEYS[1], KEYS[2])
+end
+return 0
+`)
+
+func (r *RedisOTPRepository) Verify(ctx context.Context, email, code string, maxAttempts int) (bool, error) {
 	key := r.key(email)
-
-	val, err := r.client.Get(ctx, key).Result()
-
-	if err == redis.Nil {
-		r.logger.Info("repo: OTP not found in Redis (expired or incorrect)", "key", key)
-		return "", customErrors.ErrNotFound
-	}
+	result, err := verifyOTPScript.Run(ctx, r.client, []string{key, key + ":attempts"}, code, maxAttempts).Int()
 	if err != nil {
-		r.logger.Error("repo: failed to retrieve OTP from Redis", "error", err, "key", key)
-		return "", customErrors.ErrInternal
+		r.logger.Error("repo: failed to verify OTP in Redis", "error", err)
+		return false, customErrors.ErrInternal
 	}
-
-	return val, nil
-}
-
-func (r *RedisOTPRepository) Delete(ctx context.Context, email string) error {
-	key := r.key(email)
-
-	err := r.client.Del(ctx, key).Err()
-	if err != nil {
-		r.logger.Error("repo: failed to delete OTP from Redis", "error", err, "key", key)
-		return customErrors.ErrInternal
+	if result < 0 {
+		return false, customErrors.ErrNotFound
 	}
-
-	return nil
+	return result == 1, nil
 }

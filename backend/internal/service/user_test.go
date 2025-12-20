@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 
 	customErrors "warehouse-management-system/internal/errors"
@@ -19,6 +19,47 @@ import (
 )
 
 var testSecret = []byte("test-secret-key")
+
+func TestUserService_EnsureAdminExists(t *testing.T) {
+	t.Run("creates configured administrator", func(t *testing.T) {
+		um := mocks.NewUserRepository(t)
+		um.EXPECT().GetByUsername(mock.Anything, "course-admin").Return(nil, customErrors.ErrNotFound)
+		um.EXPECT().CreateUser(mock.Anything, mock.MatchedBy(func(user *model.User) bool {
+			return user.Username == "course-admin" && user.Email == "admin@example.com" &&
+				user.Role == model.RoleAdmin && user.IsActive &&
+				bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("strong-password-123")) == nil
+		})).Return(nil)
+		um.EXPECT().GetByUsername(mock.Anything, "admin").Return(nil, customErrors.ErrNotFound)
+
+		svc := service.NewUserService(um, nil, nil, nil, newDiscardLogger(), testSecret)
+		assert.NoError(t, svc.EnsureAdminExists(context.Background(), "course-admin", "admin@example.com", "strong-password-123"))
+	})
+
+	t.Run("rotates only legacy admin password", func(t *testing.T) {
+		legacyHash, err := bcrypt.GenerateFromPassword([]byte("admin"), bcrypt.DefaultCost)
+		require.NoError(t, err)
+		legacy := &model.User{Username: "admin", Email: "legacy@example.com", PasswordHash: string(legacyHash)}
+		um := mocks.NewUserRepository(t)
+		um.EXPECT().GetByUsername(mock.Anything, "admin").Return(legacy, nil).Twice()
+		um.EXPECT().UpdatePasswordAndActivate(mock.Anything, legacy.Email, mock.MatchedBy(func(hash string) bool {
+			return bcrypt.CompareHashAndPassword([]byte(hash), []byte("replacement-password")) == nil
+		})).Return(nil)
+
+		svc := service.NewUserService(um, nil, nil, nil, newDiscardLogger(), testSecret)
+		assert.NoError(t, svc.EnsureAdminExists(context.Background(), "admin", "admin@example.com", "replacement-password"))
+	})
+
+	t.Run("preserves a non-legacy password", func(t *testing.T) {
+		secureHash, err := bcrypt.GenerateFromPassword([]byte("already-secure-password"), bcrypt.DefaultCost)
+		require.NoError(t, err)
+		admin := &model.User{Username: "admin", PasswordHash: string(secureHash)}
+		um := mocks.NewUserRepository(t)
+		um.EXPECT().GetByUsername(mock.Anything, "admin").Return(admin, nil).Twice()
+
+		svc := service.NewUserService(um, nil, nil, nil, newDiscardLogger(), testSecret)
+		assert.NoError(t, svc.EnsureAdminExists(context.Background(), "admin", "admin@example.com", "replacement-password"))
+	})
+}
 
 func TestUserService_CreateUser(t *testing.T) {
 	type args struct {
@@ -38,8 +79,8 @@ func TestUserService_CreateUser(t *testing.T) {
 			name: "Success Admin",
 			args: args{username: "admin", email: "admin@mail.com", fullName: "Admin User", role: "admin"},
 			prepare: func(um *mocks.UserRepository) {
-				um.EXPECT().GetByUsername(mock.Anything, "admin").Return(nil, errors.New("not found"))
-				um.EXPECT().GetByEmail(mock.Anything, "admin@mail.com").Return(nil, errors.New("not found"))
+				um.EXPECT().GetByUsername(mock.Anything, "admin").Return(nil, customErrors.ErrNotFound)
+				um.EXPECT().GetByEmail(mock.Anything, "admin@mail.com").Return(nil, customErrors.ErrNotFound)
 
 				um.EXPECT().CreateUser(mock.Anything, mock.MatchedBy(func(u *model.User) bool {
 					return u.Username == "admin" && u.Role == model.RoleAdmin && !u.IsActive
@@ -70,17 +111,17 @@ func TestUserService_CreateUser(t *testing.T) {
 			name: "Email Exists",
 			args: args{username: "new", email: "exist@mail.com", fullName: "f", role: "worker"},
 			prepare: func(um *mocks.UserRepository) {
-				um.EXPECT().GetByUsername(mock.Anything, "new").Return(nil, errors.New("not found"))
+				um.EXPECT().GetByUsername(mock.Anything, "new").Return(nil, customErrors.ErrNotFound)
 				um.EXPECT().GetByEmail(mock.Anything, "exist@mail.com").Return(&model.User{}, nil)
 			},
 			wantError: customErrors.ErrAlreadyExists,
 		},
 		{
 			name: "Repo Create Error",
-			args: args{username: "u", email: "e", fullName: "f", role: "worker"},
+			args: args{username: "u", email: "u@example.com", fullName: "f", role: "worker"},
 			prepare: func(um *mocks.UserRepository) {
-				um.EXPECT().GetByUsername(mock.Anything, "u").Return(nil, errors.New("nf"))
-				um.EXPECT().GetByEmail(mock.Anything, "e").Return(nil, errors.New("nf"))
+				um.EXPECT().GetByUsername(mock.Anything, "u").Return(nil, customErrors.ErrNotFound)
+				um.EXPECT().GetByEmail(mock.Anything, "u@example.com").Return(nil, customErrors.ErrNotFound)
 				um.EXPECT().CreateUser(mock.Anything, mock.Anything).Return(errors.New("db fail"))
 			},
 			wantError: errors.New("db fail"),
@@ -94,7 +135,7 @@ func TestUserService_CreateUser(t *testing.T) {
 				tc.prepare(um)
 			}
 
-			svc := service.NewUserService(um, nil, nil, newDiscardLogger(), testSecret)
+			svc := service.NewUserService(um, nil, nil, nil, newDiscardLogger(), testSecret)
 			got, err := svc.CreateUser(context.Background(), tc.args.username, tc.args.email, tc.args.fullName, tc.args.role)
 
 			if tc.wantError != nil {
@@ -126,14 +167,14 @@ func TestUserService_Login(t *testing.T) {
 	tests := []struct {
 		name        string
 		args        args
-		prepare     func(um *mocks.UserRepository)
+		prepare     func(um *mocks.UserRepository, sm *mocks.RefreshSessionRepository)
 		wantError   error
 		checkTokens bool
 	}{
 		{
 			name: "Success",
 			args: args{username: "user", password: pass},
-			prepare: func(um *mocks.UserRepository) {
+			prepare: func(um *mocks.UserRepository, sm *mocks.RefreshSessionRepository) {
 				u := &model.User{
 					ID:           uuid.New(),
 					Username:     "user",
@@ -142,6 +183,7 @@ func TestUserService_Login(t *testing.T) {
 					Role:         model.RoleWorker,
 				}
 				um.EXPECT().GetByUsername(mock.Anything, "user").Return(u, nil)
+				sm.EXPECT().Save(mock.Anything, mock.Anything, u.ID, 7*24*time.Hour).Return(nil)
 			},
 			wantError:   nil,
 			checkTokens: true,
@@ -149,15 +191,15 @@ func TestUserService_Login(t *testing.T) {
 		{
 			name: "User Not Found",
 			args: args{username: "ghost", password: pass},
-			prepare: func(um *mocks.UserRepository) {
-				um.EXPECT().GetByUsername(mock.Anything, "ghost").Return(nil, errors.New("nf"))
+			prepare: func(um *mocks.UserRepository, sm *mocks.RefreshSessionRepository) {
+				um.EXPECT().GetByUsername(mock.Anything, "ghost").Return(nil, customErrors.ErrNotFound)
 			},
-			wantError: customErrors.ErrInvalidInput,
+			wantError: customErrors.ErrUnauthorized,
 		},
 		{
 			name: "User Inactive",
 			args: args{username: "inactive", password: pass},
-			prepare: func(um *mocks.UserRepository) {
+			prepare: func(um *mocks.UserRepository, sm *mocks.RefreshSessionRepository) {
 				u := &model.User{Username: "inactive", IsActive: false}
 				um.EXPECT().GetByUsername(mock.Anything, "inactive").Return(u, nil)
 			},
@@ -166,7 +208,7 @@ func TestUserService_Login(t *testing.T) {
 		{
 			name: "Wrong Password",
 			args: args{username: "user", password: "wrong"},
-			prepare: func(um *mocks.UserRepository) {
+			prepare: func(um *mocks.UserRepository, sm *mocks.RefreshSessionRepository) {
 				u := &model.User{
 					Username:     "user",
 					PasswordHash: string(hashedPass),
@@ -174,21 +216,25 @@ func TestUserService_Login(t *testing.T) {
 				}
 				um.EXPECT().GetByUsername(mock.Anything, "user").Return(u, nil)
 			},
-			wantError: customErrors.ErrInvalidInput,
+			wantError: customErrors.ErrUnauthorized,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			um := mocks.NewUserRepository(t)
-			tc.prepare(um)
+			sm := mocks.NewRefreshSessionRepository(t)
+			tc.prepare(um, sm)
 
-			svc := service.NewUserService(um, nil, nil, newDiscardLogger(), testSecret)
+			svc := service.NewUserService(um, nil, nil, sm, newDiscardLogger(), testSecret)
 			at, rt, user, err := svc.Login(context.Background(), tc.args.username, tc.args.password)
 
 			if tc.wantError != nil {
 				assert.Error(t, err)
 				assert.ErrorIs(t, err, tc.wantError)
+				if errors.Is(tc.wantError, customErrors.ErrUnauthorized) {
+					assert.Equal(t, "Invalid credentials", err.Error())
+				}
 				assert.Empty(t, at)
 				assert.Empty(t, rt)
 				assert.Nil(t, user)
@@ -228,7 +274,7 @@ func TestUserService_GenerateAndSendOTP(t *testing.T) {
 			name:  "User Not Found (Security)",
 			email: "ghost@mail.com",
 			prepare: func(um *mocks.UserRepository, om *mocks.OTPRepository, nm *mocks.NotificationService) {
-				um.EXPECT().GetByEmail(mock.Anything, "ghost@mail.com").Return(nil, errors.New("nf"))
+				um.EXPECT().GetByEmail(mock.Anything, "ghost@mail.com").Return(nil, customErrors.ErrNotFound)
 			},
 			wantErr: false,
 		},
@@ -251,7 +297,7 @@ func TestUserService_GenerateAndSendOTP(t *testing.T) {
 
 			tc.prepare(um, om, nm)
 
-			svc := service.NewUserService(um, om, nm, newDiscardLogger(), testSecret)
+			svc := service.NewUserService(um, om, nm, nil, newDiscardLogger(), testSecret)
 			err := svc.GenerateAndSendOTP(context.Background(), tc.email)
 
 			if tc.wantErr {
@@ -287,7 +333,7 @@ func TestUserService_RecoverUsername(t *testing.T) {
 			name:  "User Not Found (Silent)",
 			email: "ghost@mail.com",
 			prepare: func(um *mocks.UserRepository, nm *mocks.NotificationService) {
-				um.EXPECT().GetByEmail(mock.Anything, "ghost@mail.com").Return(nil, errors.New("nf"))
+				um.EXPECT().GetByEmail(mock.Anything, "ghost@mail.com").Return(nil, customErrors.ErrNotFound)
 			},
 			wantErr: false,
 		},
@@ -308,7 +354,7 @@ func TestUserService_RecoverUsername(t *testing.T) {
 			nm := mocks.NewNotificationService(t)
 			tc.prepare(um, nm)
 
-			svc := service.NewUserService(um, nil, nm, newDiscardLogger(), testSecret)
+			svc := service.NewUserService(um, nil, nm, nil, newDiscardLogger(), testSecret)
 			err := svc.RecoverUsername(context.Background(), tc.email)
 
 			if tc.wantErr {
@@ -323,42 +369,46 @@ func TestUserService_RecoverUsername(t *testing.T) {
 func TestUserService_ResetPassword(t *testing.T) {
 	email := "test@mail.com"
 	code := "123456"
-	newPass := "newpass"
+	newPass := "new-password-123"
+	userID := uuid.New()
 
 	tests := []struct {
 		name    string
-		prepare func(um *mocks.UserRepository, om *mocks.OTPRepository)
+		prepare func(um *mocks.UserRepository, om *mocks.OTPRepository, sm *mocks.RefreshSessionRepository)
 		wantErr error
 	}{
 		{
 			name: "Success",
-			prepare: func(um *mocks.UserRepository, om *mocks.OTPRepository) {
-				om.EXPECT().Get(mock.Anything, email).Return(code, nil)
+			prepare: func(um *mocks.UserRepository, om *mocks.OTPRepository, sm *mocks.RefreshSessionRepository) {
+				om.EXPECT().Verify(mock.Anything, email, code, 5).Return(true, nil)
+				um.EXPECT().GetByEmail(mock.Anything, email).Return(&model.User{ID: userID}, nil)
+				sm.EXPECT().RevokeAll(mock.Anything, userID).Return(nil)
 				um.EXPECT().UpdatePasswordAndActivate(mock.Anything, email, mock.MatchedBy(func(hash string) bool {
 					return hash != newPass && len(hash) > 0
 				})).Return(nil)
-				om.EXPECT().Delete(mock.Anything, email).Return(nil)
 			},
 			wantErr: nil,
 		},
 		{
 			name: "OTP Not Found",
-			prepare: func(um *mocks.UserRepository, om *mocks.OTPRepository) {
-				om.EXPECT().Get(mock.Anything, email).Return("", errors.New("nf"))
+			prepare: func(um *mocks.UserRepository, om *mocks.OTPRepository, sm *mocks.RefreshSessionRepository) {
+				om.EXPECT().Verify(mock.Anything, email, code, 5).Return(false, customErrors.ErrNotFound)
 			},
 			wantErr: customErrors.ErrInvalidInput,
 		},
 		{
 			name: "Wrong OTP",
-			prepare: func(um *mocks.UserRepository, om *mocks.OTPRepository) {
-				om.EXPECT().Get(mock.Anything, email).Return("654321", nil)
+			prepare: func(um *mocks.UserRepository, om *mocks.OTPRepository, sm *mocks.RefreshSessionRepository) {
+				om.EXPECT().Verify(mock.Anything, email, code, 5).Return(false, nil)
 			},
 			wantErr: customErrors.ErrInvalidInput,
 		},
 		{
 			name: "Update Repo Error",
-			prepare: func(um *mocks.UserRepository, om *mocks.OTPRepository) {
-				om.EXPECT().Get(mock.Anything, email).Return(code, nil)
+			prepare: func(um *mocks.UserRepository, om *mocks.OTPRepository, sm *mocks.RefreshSessionRepository) {
+				om.EXPECT().Verify(mock.Anything, email, code, 5).Return(true, nil)
+				um.EXPECT().GetByEmail(mock.Anything, email).Return(&model.User{ID: userID}, nil)
+				sm.EXPECT().RevokeAll(mock.Anything, userID).Return(nil)
 				um.EXPECT().UpdatePasswordAndActivate(mock.Anything, email, mock.Anything).Return(errors.New("db fail"))
 			},
 			wantErr: errors.New("db fail"),
@@ -369,9 +419,10 @@ func TestUserService_ResetPassword(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			um := mocks.NewUserRepository(t)
 			om := mocks.NewOTPRepository(t)
-			tc.prepare(um, om)
+			sm := mocks.NewRefreshSessionRepository(t)
+			tc.prepare(um, om, sm)
 
-			svc := service.NewUserService(um, om, nil, newDiscardLogger(), testSecret)
+			svc := service.NewUserService(um, om, nil, sm, newDiscardLogger(), testSecret)
 			err := svc.ResetPassword(context.Background(), email, code, newPass)
 
 			if tc.wantErr != nil {
@@ -391,51 +442,46 @@ func TestUserService_ResetPassword(t *testing.T) {
 func TestUserService_RefreshToken(t *testing.T) {
 	userID := uuid.New()
 
-	createToken := func(uid uuid.UUID, secret []byte) string {
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, &model.UserClaims{
-			UserID: uid.String(),
-			RegisteredClaims: jwt.RegisteredClaims{
-				ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-			},
-		})
-		s, _ := token.SignedString(secret)
-		return s
-	}
-
 	tests := []struct {
 		name    string
 		token   string
-		prepare func(um *mocks.UserRepository)
+		prepare func(um *mocks.UserRepository, sm *mocks.RefreshSessionRepository)
 		wantErr error
 	}{
 		{
 			name:  "Success",
-			token: createToken(userID, testSecret),
-			prepare: func(um *mocks.UserRepository) {
+			token: "opaque-refresh-token",
+			prepare: func(um *mocks.UserRepository, sm *mocks.RefreshSessionRepository) {
+				sm.EXPECT().Rotate(mock.Anything, "opaque-refresh-token", mock.Anything, 7*24*time.Hour).Return(userID, nil)
 				um.EXPECT().GetByID(mock.Anything, userID).Return(&model.User{ID: userID, IsActive: true}, nil)
 			},
 			wantErr: nil,
 		},
 		{
-			name:  "Invalid Signature",
-			token: createToken(userID, []byte("wrong-key")),
-			prepare: func(um *mocks.UserRepository) {
+			name:  "Invalid Session",
+			token: "invalid",
+			prepare: func(um *mocks.UserRepository, sm *mocks.RefreshSessionRepository) {
+				sm.EXPECT().Rotate(mock.Anything, "invalid", mock.Anything, 7*24*time.Hour).Return(uuid.Nil, customErrors.ErrUnauthorized)
 			},
 			wantErr: customErrors.ErrUnauthorized,
 		},
 		{
 			name:  "User Not Found",
-			token: createToken(userID, testSecret),
-			prepare: func(um *mocks.UserRepository) {
+			token: "missing-user",
+			prepare: func(um *mocks.UserRepository, sm *mocks.RefreshSessionRepository) {
+				sm.EXPECT().Rotate(mock.Anything, "missing-user", mock.Anything, 7*24*time.Hour).Return(userID, nil)
 				um.EXPECT().GetByID(mock.Anything, userID).Return(nil, errors.New("nf"))
+				sm.EXPECT().Revoke(mock.Anything, mock.Anything).Return(nil)
 			},
 			wantErr: customErrors.ErrUnauthorized,
 		},
 		{
 			name:  "User Inactive",
-			token: createToken(userID, testSecret),
-			prepare: func(um *mocks.UserRepository) {
+			token: "inactive-user",
+			prepare: func(um *mocks.UserRepository, sm *mocks.RefreshSessionRepository) {
+				sm.EXPECT().Rotate(mock.Anything, "inactive-user", mock.Anything, 7*24*time.Hour).Return(userID, nil)
 				um.EXPECT().GetByID(mock.Anything, userID).Return(&model.User{ID: userID, IsActive: false}, nil)
+				sm.EXPECT().Revoke(mock.Anything, mock.Anything).Return(nil)
 			},
 			wantErr: customErrors.ErrUnauthorized,
 		},
@@ -444,20 +490,23 @@ func TestUserService_RefreshToken(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			um := mocks.NewUserRepository(t)
+			sm := mocks.NewRefreshSessionRepository(t)
 			if tc.prepare != nil {
-				tc.prepare(um)
+				tc.prepare(um, sm)
 			}
 
-			svc := service.NewUserService(um, nil, nil, newDiscardLogger(), testSecret)
-			newToken, err := svc.RefreshToken(context.Background(), tc.token)
+			svc := service.NewUserService(um, nil, nil, sm, newDiscardLogger(), testSecret)
+			newToken, newRefresh, err := svc.RefreshToken(context.Background(), tc.token)
 
 			if tc.wantErr != nil {
 				assert.Error(t, err)
 				assert.ErrorIs(t, err, tc.wantErr)
 				assert.Empty(t, newToken)
+				assert.Empty(t, newRefresh)
 			} else {
 				assert.NoError(t, err)
 				assert.NotEmpty(t, newToken)
+				assert.NotEmpty(t, newRefresh)
 			}
 		})
 	}
@@ -493,7 +542,7 @@ func TestUserService_GetList(t *testing.T) {
 			um := mocks.NewUserRepository(t)
 			tc.prepare(um)
 
-			svc := service.NewUserService(um, nil, nil, newDiscardLogger(), testSecret)
+			svc := service.NewUserService(um, nil, nil, nil, newDiscardLogger(), testSecret)
 			_, _, err := svc.GetList(context.Background(), tc.page, 10)
 
 			if tc.wantErr {
@@ -510,7 +559,7 @@ func TestUserService_Delete(t *testing.T) {
 	um := mocks.NewUserRepository(t)
 	um.EXPECT().Delete(mock.Anything, id).Return(nil)
 
-	svc := service.NewUserService(um, nil, nil, newDiscardLogger(), testSecret)
+	svc := service.NewUserService(um, nil, nil, nil, newDiscardLogger(), testSecret)
 	err := svc.Delete(context.Background(), id)
 	assert.NoError(t, err)
 }

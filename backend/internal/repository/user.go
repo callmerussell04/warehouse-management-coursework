@@ -110,7 +110,10 @@ func (r *UserRepository) Update(ctx context.Context, u *model.User) error {
 		return customErrors.ErrInternal
 	}
 
-	rows, _ := res.RowsAffected()
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return customErrors.ErrInternal
+	}
 	if rows == 0 {
 		return customErrors.ErrNotFound
 	}
@@ -124,7 +127,10 @@ func (r *UserRepository) Delete(ctx context.Context, id uuid.UUID) error {
 		return customErrors.ErrInternal
 	}
 
-	rows, _ := res.RowsAffected()
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return customErrors.ErrInternal
+	}
 	if rows == 0 {
 		return customErrors.ErrNotFound
 	}
@@ -163,7 +169,10 @@ func (r *UserRepository) UpdatePasswordAndActivate(ctx context.Context, email, p
 		return customErrors.ErrInternal
 	}
 
-	rows, _ := res.RowsAffected()
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return customErrors.ErrInternal
+	}
 	if rows == 0 {
 		return customErrors.ErrNotFound
 	}

@@ -34,138 +34,33 @@ func TestRedisOTPRepository_Save(t *testing.T) {
 	defer client.Close()
 	repo := repository.NewRedisOTPRepository(client, newDiscardLogger())
 
-	type args struct {
-		email    string
-		code     string
-		duration time.Duration
-	}
+	err := repo.Save(context.Background(), "test@mail.com", "123456", time.Minute)
+	require.NoError(t, err)
 
-	tests := []struct {
-		name      string
-		args      args
-		wantError error
-		checkRes  func(*testing.T)
-	}{
-		{
-			name: "Success",
-			args: args{
-				email:    "test@mail.com",
-				code:     "123456",
-				duration: time.Minute,
-			},
-			wantError: nil,
-			checkRes: func(t *testing.T) {
-				val, err := client.Get(context.Background(), "otp:test@mail.com").Result()
-				assert.NoError(t, err)
-				assert.Equal(t, "123456", val)
-			},
-		},
-	}
+	valid, err := repo.Verify(context.Background(), "test@mail.com", "123456", 5)
+	assert.NoError(t, err)
+	assert.True(t, valid)
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			err := repo.Save(context.Background(), tc.args.email, tc.args.code, tc.args.duration)
-
-			if tc.wantError != nil {
-				assert.ErrorIs(t, err, tc.wantError)
-			} else {
-				assert.NoError(t, err)
-				if tc.checkRes != nil {
-					tc.checkRes(t)
-				}
-			}
-		})
-	}
+	valid, err = repo.Verify(context.Background(), "test@mail.com", "123456", 5)
+	assert.ErrorIs(t, err, customErrors.ErrNotFound)
+	assert.False(t, valid)
 }
 
-func TestRedisOTPRepository_Get(t *testing.T) {
+func TestRedisOTPRepository_AttemptLimit(t *testing.T) {
 	client := newTestRedis(t)
 	defer client.Close()
 	repo := repository.NewRedisOTPRepository(client, newDiscardLogger())
 
-	email := "get@mail.com"
-	err := client.Set(context.Background(), "otp:get@mail.com", "654321", time.Minute).Err()
+	err := repo.Save(context.Background(), "attempts@mail.com", "654321", time.Minute)
 	require.NoError(t, err)
 
-	tests := []struct {
-		name      string
-		email     string
-		wantCode  string
-		wantError error
-	}{
-		{
-			name:      "Success",
-			email:     email,
-			wantCode:  "654321",
-			wantError: nil,
-		},
-		{
-			name:      "Not Found",
-			email:     "missing@mail.com",
-			wantCode:  "",
-			wantError: customErrors.ErrNotFound,
-		},
+	for attempt := 1; attempt <= 5; attempt++ {
+		valid, verifyErr := repo.Verify(context.Background(), "attempts@mail.com", "000000", 5)
+		assert.NoError(t, verifyErr)
+		assert.False(t, valid)
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			val, err := repo.Get(context.Background(), tc.email)
-
-			if tc.wantError != nil {
-				assert.ErrorIs(t, err, tc.wantError)
-				assert.Empty(t, val)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tc.wantCode, val)
-			}
-		})
-	}
-}
-
-func TestRedisOTPRepository_Delete(t *testing.T) {
-	client := newTestRedis(t)
-	defer client.Close()
-	repo := repository.NewRedisOTPRepository(client, newDiscardLogger())
-
-	email := "del@mail.com"
-	err := client.Set(context.Background(), "otp:del@mail.com", "111111", time.Minute).Err()
-	require.NoError(t, err)
-
-	tests := []struct {
-		name      string
-		email     string
-		wantError error
-		checkRes  func(*testing.T)
-	}{
-		{
-			name:      "Success",
-			email:     email,
-			wantError: nil,
-			checkRes: func(t *testing.T) {
-				_, err := client.Get(context.Background(), "otp:del@mail.com").Result()
-				assert.Equal(t, redis.Nil, err)
-			},
-		},
-		{
-			name:      "Delete Non-Existent",
-			email:     "ghost@mail.com",
-			wantError: nil,
-			checkRes:  nil,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			err := repo.Delete(context.Background(), tc.email)
-
-			if tc.wantError != nil {
-				assert.ErrorIs(t, err, tc.wantError)
-			} else {
-				assert.NoError(t, err)
-				if tc.checkRes != nil {
-					tc.checkRes(t)
-				}
-			}
-		})
-	}
+	valid, err := repo.Verify(context.Background(), "attempts@mail.com", "654321", 5)
+	assert.ErrorIs(t, err, customErrors.ErrNotFound)
+	assert.False(t, valid)
 }

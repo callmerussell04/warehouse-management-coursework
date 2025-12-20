@@ -3,10 +3,15 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
+	"net/mail"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -31,9 +36,17 @@ type UserRepository interface {
 //go:generate go run github.com/vektra/mockery/v2@latest --name=OTPRepository --output=../../mocks --outpkg=mocks --with-expecter=true
 type OTPRepository interface {
 	Save(ctx context.Context, email, code string, duration time.Duration) error
-	Get(ctx context.Context, email string) (string, error)
-	Delete(ctx context.Context, email string) error
+	Verify(ctx context.Context, email, code string, maxAttempts int) (bool, error)
 }
+
+type RefreshSessionRepository interface {
+	Save(ctx context.Context, token string, userID uuid.UUID, ttl time.Duration) error
+	Rotate(ctx context.Context, oldToken, newToken string, ttl time.Duration) (uuid.UUID, error)
+	Revoke(ctx context.Context, token string) error
+	RevokeAll(ctx context.Context, userID uuid.UUID) error
+}
+
+//go:generate go run github.com/vektra/mockery/v2@latest --name=RefreshSessionRepository --output=../../mocks --outpkg=mocks --with-expecter=true
 
 //go:generate go run github.com/vektra/mockery/v2@latest --name=NotificationService --output=../../mocks --outpkg=mocks --with-expecter=true
 type NotificationService interface {
@@ -41,60 +54,78 @@ type NotificationService interface {
 }
 
 type UserService struct {
-	userRepository UserRepository
-	otpRepository  OTPRepository
-	notifier       NotificationService
-	logger         *slog.Logger
-	jwtSecret      []byte
+	userRepository  UserRepository
+	otpRepository   OTPRepository
+	notifier        NotificationService
+	refreshSessions RefreshSessionRepository
+	logger          *slog.Logger
+	jwtSecret       []byte
 }
 
-func NewUserService(userRepo UserRepository, otpRepo OTPRepository, notifier NotificationService, logger *slog.Logger, jwtSecret []byte) *UserService {
+func NewUserService(userRepo UserRepository, otpRepo OTPRepository, notifier NotificationService, refreshSessions RefreshSessionRepository, logger *slog.Logger, jwtSecret []byte) *UserService {
 	return &UserService{
-		userRepository: userRepo,
-		otpRepository:  otpRepo,
-		notifier:       notifier,
-		logger:         logger,
-		jwtSecret:      jwtSecret,
+		userRepository:  userRepo,
+		otpRepository:   otpRepo,
+		notifier:        notifier,
+		refreshSessions: refreshSessions,
+		logger:          logger,
+		jwtSecret:       jwtSecret,
 	}
 }
 
-func (s *UserService) EnsureAdminExists(ctx context.Context) error {
-	const (
-		adminUsername = "admin"
-		adminPassword = "admin"
-		adminEmail    = "admin@system.local"
-	)
+func (s *UserService) EnsureAdminExists(ctx context.Context, username, email, password string) error {
+	_, err := s.userRepository.GetByUsername(ctx, username)
+	if errors.Is(err, customErrors.ErrNotFound) {
+		hashedPassword, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if hashErr != nil {
+			return fmt.Errorf("failed to hash admin password: %w", hashErr)
+		}
+		admin := &model.User{
+			ID:           uuid.New(),
+			Username:     username,
+			Email:        email,
+			PasswordHash: string(hashedPassword),
+			FullName:     "System Administrator",
+			Role:         model.RoleAdmin,
+			IsActive:     true,
+		}
+		if err := s.userRepository.CreateUser(ctx, admin); err != nil {
+			return fmt.Errorf("failed to create admin user: %w", err)
+		}
+		s.logger.Info("Administrator account created", "username", username)
+	} else if err != nil {
+		return fmt.Errorf("failed to check administrator account: %w", err)
+	}
 
-	_, err := s.userRepository.GetByUsername(ctx, adminUsername)
-	if err == nil {
-		s.logger.Info("Admin user already exists, skipping creation")
+	legacyAdmin, err := s.userRepository.GetByUsername(ctx, "admin")
+	if errors.Is(err, customErrors.ErrNotFound) {
 		return nil
 	}
-
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.DefaultCost)
 	if err != nil {
-		return fmt.Errorf("failed to hash admin password: %w", err)
+		return fmt.Errorf("failed to check legacy administrator account: %w", err)
 	}
-
-	admin := &model.User{
-		ID:           uuid.New(),
-		Username:     adminUsername,
-		Email:        adminEmail,
-		PasswordHash: string(hashedPassword),
-		FullName:     "System Administrator",
-		Role:         model.RoleAdmin,
-		IsActive:     true,
+	if bcrypt.CompareHashAndPassword([]byte(legacyAdmin.PasswordHash), []byte("admin")) == nil {
+		hashedPassword, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if hashErr != nil {
+			return fmt.Errorf("failed to hash replacement admin password: %w", hashErr)
+		}
+		if err := s.userRepository.UpdatePasswordAndActivate(ctx, legacyAdmin.Email, string(hashedPassword)); err != nil {
+			return fmt.Errorf("failed to rotate legacy administrator password: %w", err)
+		}
+		s.logger.Info("Legacy administrator password rotated")
 	}
-
-	if err := s.userRepository.CreateUser(ctx, admin); err != nil {
-		return fmt.Errorf("failed to create admin user: %w", err)
-	}
-
-	s.logger.Info("Default admin user created successfully", "username", adminUsername, "password", adminPassword)
 	return nil
 }
 
 func (s *UserService) CreateUser(ctx context.Context, username, email, fullName, roleStr string) (*model.User, error) {
+	username = strings.TrimSpace(username)
+	email = normalizeEmail(email)
+	fullName = strings.TrimSpace(fullName)
+	if username == "" || utf8.RuneCountInString(username) > 255 ||
+		email == "" || utf8.RuneCountInString(email) > 255 || !validEmail(email) ||
+		fullName == "" || utf8.RuneCountInString(fullName) > 255 {
+		return nil, customErrors.ErrInvalidInput
+	}
 	role := model.Role(roleStr)
 	if role != model.RoleAdmin && role != model.RoleWorker {
 		return nil, customErrors.NewAppError(customErrors.ErrInvalidInput, "Invalid role. Allowed: admin, worker")
@@ -102,9 +133,13 @@ func (s *UserService) CreateUser(ctx context.Context, username, email, fullName,
 
 	if _, err := s.userRepository.GetByUsername(ctx, username); err == nil {
 		return nil, customErrors.ErrAlreadyExists
+	} else if !errors.Is(err, customErrors.ErrNotFound) {
+		return nil, err
 	}
 	if _, err := s.userRepository.GetByEmail(ctx, email); err == nil {
 		return nil, customErrors.ErrAlreadyExists
+	} else if !errors.Is(err, customErrors.ErrNotFound) {
+		return nil, err
 	}
 
 	u := &model.User{
@@ -126,94 +161,101 @@ func (s *UserService) CreateUser(ctx context.Context, username, email, fullName,
 
 func (s *UserService) Login(ctx context.Context, username, password string) (accessToken, refreshToken string, user *model.User, err error) {
 	u, err := s.userRepository.GetByUsername(ctx, username)
+	if errors.Is(err, customErrors.ErrNotFound) {
+		const dummyHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+		_ = bcrypt.CompareHashAndPassword([]byte(dummyHash), []byte(password))
+		return "", "", nil, invalidCredentialsError()
+	}
 	if err != nil {
-		return "", "", nil, customErrors.NewAppError(customErrors.ErrInvalidInput, "Invalid credentials")
+		return "", "", nil, err
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil || !u.IsActive {
+		return "", "", nil, invalidCredentialsError()
 	}
 
-	if !u.IsActive {
-		return "", "", nil, customErrors.NewAppError(customErrors.ErrUnauthorized, "Account not activated")
-	}
-
-	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
-		return "", "", nil, customErrors.NewAppError(customErrors.ErrInvalidInput, "Invalid credentials")
-	}
-
-	accessToken, err = s.generateToken(u, 15*time.Minute)
+	accessToken, err = s.generateAccessToken(u)
 	if err != nil {
 		s.logger.Error("failed to generate access token", "error", err)
 		return "", "", nil, customErrors.ErrInternal
 	}
 
-	refreshToken, err = s.generateToken(u, 7*24*time.Hour)
+	refreshToken, err = generateRefreshToken()
 	if err != nil {
 		s.logger.Error("failed to generate refresh token", "error", err)
 		return "", "", nil, customErrors.ErrInternal
 	}
 
+	if err := s.refreshSessions.Save(ctx, refreshToken, u.ID, 7*24*time.Hour); err != nil {
+		return "", "", nil, err
+	}
 	return accessToken, refreshToken, u, nil
 }
 
+func invalidCredentialsError() error {
+	return customErrors.NewAppError(customErrors.ErrUnauthorized, "Invalid credentials")
+}
+
 func (s *UserService) RecoverUsername(ctx context.Context, email string) error {
+	email = normalizeEmail(email)
 	user, err := s.userRepository.GetByEmail(ctx, email)
-	if err != nil {
-		s.logger.Info("Username recovery requested for non-existent email", "email", email)
+	if errors.Is(err, customErrors.ErrNotFound) {
 		return nil
+	}
+	if err != nil {
+		return err
 	}
 
 	subject := "Warehouse System - Username Recovery"
 	body := fmt.Sprintf("Hello %s,\n\nYou requested to recover your username.\nYour username is: %s\n\nIf you did not request this, please ignore this email.", user.FullName, user.Username)
 
 	if err := s.notifier.SendEmail(email, subject, body); err != nil {
-		s.logger.Error("Failed to send username recovery email", "error", err, "email", email)
+		s.logger.Error("Failed to send username recovery email", "error", err)
 		return customErrors.ErrInternal
 	}
 
 	return nil
 }
 
-func (s *UserService) RefreshToken(ctx context.Context, tokenString string) (string, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &model.UserClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return s.jwtSecret, nil
-	})
-
+func (s *UserService) RefreshToken(ctx context.Context, tokenString string) (string, string, error) {
+	newRefreshToken, err := generateRefreshToken()
 	if err != nil {
-		return "", customErrors.NewAppError(customErrors.ErrUnauthorized, "Invalid or expired refresh token")
+		return "", "", customErrors.ErrInternal
 	}
-
-	claims, ok := token.Claims.(*model.UserClaims)
-	if !ok || !token.Valid {
-		return "", customErrors.NewAppError(customErrors.ErrUnauthorized, "Invalid token claims")
+	userID, err := s.refreshSessions.Rotate(ctx, tokenString, newRefreshToken, 7*24*time.Hour)
+	if errors.Is(err, customErrors.ErrUnauthorized) {
+		return "", "", customErrors.NewAppError(customErrors.ErrUnauthorized, "Invalid or expired refresh token")
 	}
-
-	userID, parseErr := uuid.Parse(claims.UserID)
-	if parseErr != nil {
-		return "", customErrors.NewAppError(customErrors.ErrUnauthorized, "Invalid User ID in token")
+	if err != nil {
+		return "", "", err
 	}
-
 	user, dbErr := s.userRepository.GetByID(ctx, userID)
 	if dbErr != nil {
-		return "", customErrors.NewAppError(customErrors.ErrUnauthorized, "User not found")
+		_ = s.refreshSessions.Revoke(ctx, newRefreshToken)
+		return "", "", customErrors.NewAppError(customErrors.ErrUnauthorized, "User not found")
 	}
 	if !user.IsActive {
-		return "", customErrors.NewAppError(customErrors.ErrUnauthorized, "User account is inactive")
+		_ = s.refreshSessions.Revoke(ctx, newRefreshToken)
+		return "", "", customErrors.NewAppError(customErrors.ErrUnauthorized, "User account is inactive")
 	}
 
-	newAccessToken, genErr := s.generateToken(user, 15*time.Minute)
+	newAccessToken, genErr := s.generateAccessToken(user)
 	if genErr != nil {
 		s.logger.Error("failed to generate new access token", "error", genErr)
-		return "", customErrors.ErrInternal
+		return "", "", customErrors.ErrInternal
 	}
+	return newAccessToken, newRefreshToken, nil
+}
 
-	return newAccessToken, nil
+func (s *UserService) Logout(ctx context.Context, refreshToken string) error {
+	return s.refreshSessions.Revoke(ctx, refreshToken)
 }
 
 func (s *UserService) GenerateAndSendOTP(ctx context.Context, email string) error {
-	if _, err := s.userRepository.GetByEmail(ctx, email); err != nil {
-		s.logger.Warn("OTP requested for non-existent email", "email", email)
+	email = normalizeEmail(email)
+	if _, err := s.userRepository.GetByEmail(ctx, email); errors.Is(err, customErrors.ErrNotFound) {
 		return nil
+	} else if err != nil {
+		return err
 	}
 
 	code, err := generateRandomCode(6)
@@ -232,14 +274,26 @@ func (s *UserService) GenerateAndSendOTP(ctx context.Context, email string) erro
 }
 
 func (s *UserService) ResetPassword(ctx context.Context, email, code, newPassword string) error {
-	storedCode, err := s.otpRepository.Get(ctx, email)
-
-	if err != nil || storedCode == "" {
+	if len(newPassword) < 12 || len(newPassword) > 72 {
+		return customErrors.NewAppError(customErrors.ErrInvalidInput, "Password must contain between 12 and 72 bytes")
+	}
+	email = normalizeEmail(email)
+	valid, err := s.otpRepository.Verify(ctx, email, code, 5)
+	if errors.Is(err, customErrors.ErrNotFound) {
 		return customErrors.NewAppError(customErrors.ErrInvalidInput, "Invalid or expired OTP code")
 	}
-
-	if storedCode != code {
-		return customErrors.NewAppError(customErrors.ErrInvalidInput, "Incorrect OTP code")
+	if err != nil {
+		return err
+	}
+	if !valid {
+		return customErrors.NewAppError(customErrors.ErrInvalidInput, "Invalid or expired OTP code")
+	}
+	user, err := s.userRepository.GetByEmail(ctx, email)
+	if err != nil {
+		return err
+	}
+	if err := s.refreshSessions.RevokeAll(ctx, user.ID); err != nil {
+		return err
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
@@ -252,8 +306,7 @@ func (s *UserService) ResetPassword(ctx context.Context, email, code, newPasswor
 		return err
 	}
 
-	_ = s.otpRepository.Delete(ctx, email)
-	s.logger.Info("Password updated successfully", "email", email)
+	s.logger.Info("Password updated successfully", "user_id", user.ID)
 	return nil
 }
 
@@ -279,19 +332,37 @@ func (s *UserService) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (s *UserService) generateToken(user *model.User, duration time.Duration) (string, error) {
+func (s *UserService) generateAccessToken(user *model.User) (string, error) {
+	now := time.Now()
 	claims := model.UserClaims{
 		UserID:   user.ID.String(),
 		Username: user.Username,
 		Role:     string(user.Role),
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(duration)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(now),
 			Issuer:    "warehouse-system",
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.jwtSecret)
+}
+
+func generateRefreshToken() (string, error) {
+	value := make([]byte, 32)
+	if _, err := rand.Read(value); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(value), nil
+}
+
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func validEmail(email string) bool {
+	address, err := mail.ParseAddress(email)
+	return err == nil && address.Address == email
 }
 
 func generateRandomCode(length int) (string, error) {

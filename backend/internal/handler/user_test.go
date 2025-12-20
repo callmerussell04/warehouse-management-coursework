@@ -2,6 +2,7 @@ package handler_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -22,11 +24,23 @@ import (
 	"warehouse-management-system/mocks"
 )
 
+type allowRateLimiter struct{}
+
+func (allowRateLimiter) Allow(context.Context, string, int64, time.Duration) (bool, time.Duration, error) {
+	return true, 0, nil
+}
+
+type denyRateLimiter struct{}
+
+func (denyRateLimiter) Allow(context.Context, string, int64, time.Duration) (bool, time.Duration, error) {
+	return false, 30 * time.Second, nil
+}
+
 func setupUserRouter(svc handler.UserService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	h := handler.NewUserHandler(svc, logger)
+	h := handler.NewUserHandler(svc, allowRateLimiter{}, false, logger)
 
 	r.POST("/users", h.Create)
 	r.POST("/login", h.Login)
@@ -172,9 +186,9 @@ func TestUserHandler_Login(t *testing.T) {
 				body: dto.LoginRequest{Username: "user", Password: "wrong"},
 			},
 			prepare: func(m *mocks.UserService) {
-				m.EXPECT().Login(mock.Anything, "user", "wrong").Return("", "", nil, customErrors.ErrInvalidInput)
+				m.EXPECT().Login(mock.Anything, "user", "wrong").Return("", "", nil, customErrors.ErrUnauthorized)
 			},
-			expectedStatus: http.StatusBadRequest,
+			expectedStatus: http.StatusUnauthorized,
 		},
 	}
 
@@ -205,6 +219,11 @@ func TestUserHandler_Login(t *testing.T) {
 				for _, c := range cookies {
 					if c.Name == "refresh_token" && c.Value == "refresh" {
 						found = true
+						assert.True(t, c.HttpOnly)
+						assert.Equal(t, http.SameSiteLaxMode, c.SameSite)
+						assert.Equal(t, "/auth", c.Path)
+						assert.Empty(t, c.Domain)
+						assert.False(t, c.Secure)
 						break
 					}
 				}
@@ -212,6 +231,40 @@ func TestUserHandler_Login(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUserHandler_LoginRateLimit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	h := handler.NewUserHandler(mocks.NewUserService(t), denyRateLimiter{}, false, logger)
+	router.POST("/login", h.Login)
+
+	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewBufferString(`{"username":"user","password":"password"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusTooManyRequests, w.Code)
+	assert.Equal(t, "30", w.Header().Get("Retry-After"))
+}
+
+func TestUserHandler_LoginSecureCookie(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := mocks.NewUserService(t)
+	svc.EXPECT().Login(mock.Anything, "user", "password").Return("access", "refresh", &model.User{ID: uuid.New()}, nil)
+	h := handler.NewUserHandler(svc, allowRateLimiter{}, true, logger)
+	router.POST("/login", h.Login)
+
+	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewBufferString(`{"username":"user","password":"password"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.True(t, w.Result().Cookies()[0].Secure)
 }
 
 func TestUserHandler_Logout(t *testing.T) {
@@ -382,20 +435,20 @@ func TestUserHandler_ResetPassword(t *testing.T) {
 		{
 			name: "Success",
 			args: args{
-				body: dto.ResetPasswordRequest{Email: "a@a.com", OTP: "123456", NewPassword: "newpass"},
+				body: dto.ResetPasswordRequest{Email: "a@a.com", OTP: "123456", NewPassword: "new-password-123"},
 			},
 			prepare: func(m *mocks.UserService) {
-				m.EXPECT().ResetPassword(mock.Anything, "a@a.com", "123456", "newpass").Return(nil)
+				m.EXPECT().ResetPassword(mock.Anything, "a@a.com", "123456", "new-password-123").Return(nil)
 			},
 			expectedStatus: http.StatusOK,
 		},
 		{
 			name: "Service Error",
 			args: args{
-				body: dto.ResetPasswordRequest{Email: "a@a.com", OTP: "123456", NewPassword: "validpass"},
+				body: dto.ResetPasswordRequest{Email: "a@a.com", OTP: "123456", NewPassword: "valid-password"},
 			},
 			prepare: func(m *mocks.UserService) {
-				m.EXPECT().ResetPassword(mock.Anything, "a@a.com", "123456", "validpass").Return(customErrors.ErrInvalidInput)
+				m.EXPECT().ResetPassword(mock.Anything, "a@a.com", "123456", "valid-password").Return(customErrors.ErrInvalidInput)
 			},
 			expectedStatus: http.StatusBadRequest,
 		},
@@ -459,7 +512,7 @@ func TestUserHandler_RefreshToken(t *testing.T) {
 			name:        "Success",
 			cookieValue: "valid-refresh",
 			prepare: func(m *mocks.UserService) {
-				m.EXPECT().RefreshToken(mock.Anything, "valid-refresh").Return("new-access", nil)
+				m.EXPECT().RefreshToken(mock.Anything, "valid-refresh").Return("new-access", "new-refresh", nil)
 			},
 			expectedStatus: http.StatusOK,
 			checkBody: func(t *testing.T, body []byte) {
@@ -479,7 +532,7 @@ func TestUserHandler_RefreshToken(t *testing.T) {
 			name:        "Service Error (Invalid)",
 			cookieValue: "invalid",
 			prepare: func(m *mocks.UserService) {
-				m.EXPECT().RefreshToken(mock.Anything, "invalid").Return("", customErrors.ErrUnauthorized)
+				m.EXPECT().RefreshToken(mock.Anything, "invalid").Return("", "", customErrors.ErrUnauthorized)
 			},
 			expectedStatus: http.StatusUnauthorized,
 			checkClear:     true,

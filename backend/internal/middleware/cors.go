@@ -7,8 +7,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func CORSMiddleware() gin.HandlerFunc {
+func CORSMiddleware(allowedOrigins []string) gin.HandlerFunc {
 	return cors.New(cors.Config{
+		AllowOrigins: allowedOrigins,
 		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 
 		AllowHeaders: []string{
@@ -23,10 +24,6 @@ func CORSMiddleware() gin.HandlerFunc {
 		ExposeHeaders: []string{"Content-Length"},
 
 		AllowCredentials: true,
-
-		AllowOriginFunc: func(origin string) bool {
-			return true
-		},
 
 		MaxAge: 12 * time.Hour,
 	})

@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -29,11 +28,8 @@ func AuthMiddleware(logger *slog.Logger, jwtSecret []byte) gin.HandlerFunc {
 		tokenString := parts[1]
 
 		token, err := jwt.ParseWithClaims(tokenString, &model.UserClaims{}, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
 			return jwtSecret, nil
-		})
+		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithIssuer("warehouse-system"), jwt.WithExpirationRequired())
 
 		if err != nil {
 			logger.Warn("Unauthorized access attempt", "error", err, "ip", c.ClientIP())

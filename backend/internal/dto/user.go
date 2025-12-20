@@ -1,9 +1,9 @@
 package dto
 
 type CreateUserRequest struct {
-	Username string `json:"username" binding:"required"`
-	Email    string `json:"email" binding:"required,email"`
-	FullName string `json:"full_name" binding:"required"`
+	Username string `json:"username" binding:"required,min=1,max=255"`
+	Email    string `json:"email" binding:"required,email,max=254"`
+	FullName string `json:"full_name" binding:"required,min=1,max=255"`
 	Role     string `json:"role" binding:"required,oneof=admin worker"`
 }
 
@@ -23,8 +23,8 @@ type UserResponse struct {
 // }
 
 type LoginRequest struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
+	Username string `json:"username" binding:"required,max=255"`
+	Password string `json:"password" binding:"required,max=72"`
 }
 
 type LoginResponse struct {
@@ -33,17 +33,17 @@ type LoginResponse struct {
 }
 
 type SendOTPRequest struct {
-	Email string `json:"email" binding:"required,email"`
+	Email string `json:"email" binding:"required,email,max=254"`
 }
 
 type ForgotUsernameRequest struct {
-	Email string `json:"email" binding:"required,email"`
+	Email string `json:"email" binding:"required,email,max=254"`
 }
 
 type ResetPasswordRequest struct {
-	Email       string `json:"email" binding:"required,email"`
+	Email       string `json:"email" binding:"required,email,max=254"`
 	OTP         string `json:"otp" binding:"required,len=6"`
-	NewPassword string `json:"new_password" binding:"required,min=6"`
+	NewPassword string `json:"new_password" binding:"required,min=12,max=72"`
 }
 
 type RefreshTokenResponse struct {

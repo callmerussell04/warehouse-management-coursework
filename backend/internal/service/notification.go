@@ -32,7 +32,7 @@ func NewSMTPNotificationService(logger *slog.Logger) *SMTPNotificationService {
 
 func (s *SMTPNotificationService) SendEmail(to, subject, body string) error {
 	if s.host == "" || s.username == "" {
-		s.logger.Info("[MOCK EMAIL] SMTP not configured", "to", to, "subject", subject)
+		s.logger.Info("SMTP not configured; email delivery skipped")
 		return nil
 	}
 
@@ -48,10 +48,10 @@ func (s *SMTPNotificationService) SendEmail(to, subject, body string) error {
 
 	err := s.SendMail(address, auth, s.from, []string{to}, msg)
 	if err != nil {
-		s.logger.Error("failed to send email", "error", err, "to", to)
+		s.logger.Error("failed to send email", "error", err)
 		return err
 	}
 
-	s.logger.Info("email sent successfully", "to", to)
+	s.logger.Info("email sent successfully")
 	return nil
 }

@@ -24,12 +24,11 @@ import (
 func Run() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-	jwtSecretStr := os.Getenv("JWT_SECRET")
-	if jwtSecretStr == "" {
-		jwtSecretStr = "super-secure-default-key-32-chars-long"
-		logger.Warn("JWT_SECRET not set, using default for development")
+	cfg, err := loadConfig()
+	if err != nil {
+		logger.Error("invalid configuration", "error", err)
+		os.Exit(1)
 	}
-	jwtSecret := []byte(jwtSecretStr)
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -65,6 +64,8 @@ func Run() {
 
 	userRepository := repository.NewUserRepository(db, logger)
 	otpRepository := repository.NewRedisOTPRepository(redisClient, logger)
+	refreshSessionRepository := repository.NewRedisRefreshSessionRepository(redisClient)
+	rateLimiter := repository.NewRedisRateLimiter(redisClient)
 	productRepository := repository.NewProductRepository(db, logger)
 	counterpartyRepository := repository.NewCounterpartyRepository(db, logger)
 	orderRepository := repository.NewOrderRepository(db, logger)
@@ -72,7 +73,7 @@ func Run() {
 
 	emailService := service.NewSMTPNotificationService(logger)
 
-	userService := service.NewUserService(userRepository, otpRepository, emailService, logger, jwtSecret)
+	userService := service.NewUserService(userRepository, otpRepository, emailService, refreshSessionRepository, logger, cfg.jwtSecret)
 
 	productService := service.NewProductService(productRepository, logger)
 	counterpartyService := service.NewCounterpartyService(counterpartyRepository, logger)
@@ -82,26 +83,36 @@ func Run() {
 	ctxInit, cancelInit := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelInit()
 
-	if err := userService.EnsureAdminExists(ctxInit); err != nil {
+	if err := userService.EnsureAdminExists(ctxInit, cfg.adminUsername, cfg.adminEmail, cfg.adminPassword); err != nil {
 		logger.Error("Failed to ensure admin user exists", "error", err)
 		os.Exit(1)
 	}
 
-	userHandler := handler.NewUserHandler(userService, logger)
+	userHandler := handler.NewUserHandler(userService, rateLimiter, cfg.cookieSecure, logger)
 	productHandler := handler.NewProductHandler(productService, logger)
 	counterpartyHandler := handler.NewCounterpartyHandler(counterpartyService, logger)
 	orderHandler := handler.NewOrderHandler(orderService, logger)
 	reportHandler := handler.NewReportHandler(reportService, logger)
 
 	router := gin.Default()
+	if err := router.SetTrustedProxies(cfg.trustedProxies); err != nil {
+		logger.Error("failed to configure trusted proxies", "error", err)
+		return
+	}
 
-	router.Use(middleware.CORSMiddleware())
+	router.Use(middleware.LimitRequestBody())
+	router.Use(middleware.CORSMiddleware(cfg.allowedOrigins))
 
-	handler.InitRoutes(router, logger, jwtSecret, productHandler, counterpartyHandler, orderHandler, userHandler, reportHandler)
+	handler.InitRoutes(router, logger, cfg.jwtSecret, productHandler, counterpartyHandler, orderHandler, userHandler, reportHandler)
 
 	srv := &http.Server{
-		Addr:    ":" + port,
-		Handler: router,
+		Addr:              ":" + port,
+		Handler:           router,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	go func() {
