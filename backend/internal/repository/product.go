@@ -39,8 +39,11 @@ func (r *ProductRepository) Create(ctx context.Context, p *model.Product) error 
 
 	if err != nil {
 		if pqErr, ok := err.(*pq.Error); ok {
-			if pqErr.Code == "23505" {
+			switch pqErr.Code {
+			case "23505":
 				return customErrors.ErrAlreadyExists
+			case "23514":
+				return customErrors.ErrInvalidInput
 			}
 		}
 		r.logger.Error("repository: failed to create product", "error", err)
@@ -137,8 +140,11 @@ func (r *ProductRepository) Update(ctx context.Context, p *model.Product) error 
 	}
 	if err != nil {
 		if pqErr, ok := err.(*pq.Error); ok {
-			if pqErr.Code == "23505" {
+			switch pqErr.Code {
+			case "23505":
 				return customErrors.ErrAlreadyExists
+			case "23514":
+				return customErrors.ErrInvalidInput
 			}
 		}
 		r.logger.Error("repository: failed to update product", "id", p.ID, "error", err)
@@ -153,6 +159,9 @@ func (r *ProductRepository) Delete(ctx context.Context, id uuid.UUID) error {
 
 	res, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23503" {
+			return customErrors.NewAppError(customErrors.ErrConflict, "product is referenced by inventory history or an order")
+		}
 		r.logger.Error("repository: failed to delete product", "id", id, "error", err)
 		return customErrors.ErrInternal
 	}
@@ -169,14 +178,14 @@ func (r *ProductRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (r *ProductRepository) UpdateStock(ctx context.Context, productID uuid.UUID, amount int, transType model.TransactionType) error {
+func (r *ProductRepository) UpdateStock(ctx context.Context, productID uuid.UUID, amount int64, transType model.TransactionType) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return customErrors.ErrInternal
 	}
 	defer tx.Rollback()
 
-	var currentQty int
+	var currentQty int64
 	err = tx.QueryRowContext(ctx, "SELECT quantity FROM products WHERE id = $1 FOR UPDATE", productID).Scan(&currentQty)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -188,6 +197,9 @@ func (r *ProductRepository) UpdateStock(ctx context.Context, productID uuid.UUID
 	newQty := currentQty
 	switch transType {
 	case model.TransactionIncome:
+		if currentQty > (1<<63-1)-amount {
+			return customErrors.NewAppError(customErrors.ErrInvalidInput, "stock quantity overflow")
+		}
 		newQty += amount
 	case model.TransactionExpense:
 		if currentQty < amount {
@@ -241,7 +253,7 @@ func (r *ProductRepository) GetProductHistory(ctx context.Context, productID uui
 		argID++
 	}
 	if !to.IsZero() {
-		filter := fmt.Sprintf(" AND it.created_at <= $%d", argID)
+		filter := fmt.Sprintf(" AND it.created_at < $%d", argID)
 		baseQuery += filter
 		countQuery += filter
 		args = append(args, to)
@@ -269,6 +281,9 @@ func (r *ProductRepository) GetProductHistory(ctx context.Context, productID uui
 		}
 		t.Type = model.TransactionType(typeStr)
 		list = append(list, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, customErrors.ErrInternal
 	}
 
 	var total int

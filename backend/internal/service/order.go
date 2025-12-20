@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	customErrors "warehouse-management-system/internal/errors"
 	"warehouse-management-system/internal/model"
@@ -16,7 +18,7 @@ import (
 type OrderRepository interface {
 	Create(ctx context.Context, order *model.Order) error
 	GetByID(ctx context.Context, id uuid.UUID) (*model.Order, error)
-	Update(ctx context.Context, order *model.Order) error
+	Transition(ctx context.Context, id uuid.UUID, targetStatus model.OrderStatus) (*model.Order, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	GetList(ctx context.Context, limit, offset int) ([]*model.Order, int, error)
 }
@@ -26,28 +28,38 @@ type OrderCounterpartyService interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*model.Counterparty, error)
 }
 
-//go:generate go run github.com/vektra/mockery/v2@latest --name=OrderProductService --output=../../mocks --outpkg=mocks --with-expecter=true
-type OrderProductService interface {
-	ChangeStock(ctx context.Context, productID uuid.UUID, amount int, transactionType string) error
-}
-
 type OrderService struct {
 	repo                OrderRepository
 	counterpartyService OrderCounterpartyService
-	productService      OrderProductService
 	logger              *slog.Logger
 }
 
-func NewOrderService(repo OrderRepository, counterpartyService OrderCounterpartyService, productService OrderProductService, logger *slog.Logger) *OrderService {
+func NewOrderService(repo OrderRepository, counterpartyService OrderCounterpartyService, logger *slog.Logger) *OrderService {
 	return &OrderService{
 		repo:                repo,
 		counterpartyService: counterpartyService,
-		productService:      productService,
 		logger:              logger,
 	}
 }
 
 func (s *OrderService) Create(ctx context.Context, order *model.Order) (*model.Order, error) {
+	order.Destination = strings.TrimSpace(order.Destination)
+	if order.CounterpartyID == uuid.Nil || utf8.RuneCountInString(order.Destination) > 255 {
+		return nil, customErrors.ErrInvalidInput
+	}
+	if len(order.Items) == 0 || len(order.Items) > 100 {
+		return nil, customErrors.NewAppError(customErrors.ErrInvalidInput, "order must contain between 1 and 100 items")
+	}
+	seenProducts := make(map[uuid.UUID]struct{}, len(order.Items))
+	for _, item := range order.Items {
+		if item.ProductID == uuid.Nil || item.Quantity <= 0 {
+			return nil, customErrors.NewAppError(customErrors.ErrInvalidInput, "order item must contain a valid product and positive quantity")
+		}
+		if _, exists := seenProducts[item.ProductID]; exists {
+			return nil, customErrors.NewAppError(customErrors.ErrInvalidInput, "order contains duplicate products")
+		}
+		seenProducts[item.ProductID] = struct{}{}
+	}
 	counterparty, err := s.counterpartyService.GetByID(ctx, order.CounterpartyID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: counterparty not found or service error", err)
@@ -96,61 +108,13 @@ func (s *OrderService) GetByID(ctx context.Context, id uuid.UUID) (*model.Order,
 }
 
 func (s *OrderService) Update(ctx context.Context, id uuid.UUID, newStatus string) (*model.Order, error) {
-	order, err := s.repo.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
 	targetStatus := model.OrderStatus(newStatus)
-
-	if order.Status == model.StatusCanceled || order.Status == model.StatusCompleted {
-		return nil, fmt.Errorf("%w: cannot change status of a %s order", customErrors.ErrInvalidInput, order.Status)
+	switch targetStatus {
+	case model.StatusProcessing, model.StatusCompleted, model.StatusCanceled:
+		return s.repo.Transition(ctx, id, targetStatus)
+	default:
+		return nil, customErrors.NewAppError(customErrors.ErrInvalidInput, "invalid target order status")
 	}
-
-	if targetStatus == model.StatusCompleted && order.Status != model.StatusCompleted {
-
-		transactionType := ""
-		switch order.OrderType {
-		case model.OrderInbound:
-			transactionType = "income"
-		case model.OrderOutbound:
-			transactionType = "expense"
-		default:
-			s.logger.Error("Order type is invalid for stock change", "order_id", id, "type", order.OrderType)
-		}
-
-		if transactionType != "" {
-			for i, item := range order.Items {
-				err := s.productService.ChangeStock(ctx, item.ProductID, item.Quantity, transactionType)
-				if err != nil {
-					s.logger.Error("failed to update stock, attempting rollback", "order_id", id, "failed_item", item.ProductID)
-
-					rollbackType := "income"
-					if transactionType == "income" {
-						rollbackType = "expense"
-					}
-
-					for j := 0; j < i; j++ {
-						rollbackItem := order.Items[j]
-						_ = s.productService.ChangeStock(ctx, rollbackItem.ProductID, rollbackItem.Quantity, rollbackType)
-					}
-
-					return nil, fmt.Errorf("failed to process order items: %w", err)
-				}
-			}
-			s.logger.Info("Stock updated successfully", "order_id", id)
-		}
-	}
-
-	order.Status = targetStatus
-	order.UpdatedAt = time.Now()
-
-	if err := s.repo.Update(ctx, order); err != nil {
-		s.logger.Error("CRITICAL: Stock updated but Order Status update failed", "order_id", id, "error", err)
-		return nil, fmt.Errorf("failed to update order status (data inconsistency potential): %w", err)
-	}
-
-	return order, nil
 }
 
 func (s *OrderService) Delete(ctx context.Context, id uuid.UUID) error {
@@ -172,6 +136,9 @@ func (s *OrderService) GetList(ctx context.Context, page, pageSize int) ([]*mode
 	}
 	if pageSize < 1 {
 		pageSize = 10
+	}
+	if pageSize > 100 {
+		pageSize = 100
 	}
 
 	offset := (page - 1) * pageSize

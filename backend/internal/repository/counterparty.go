@@ -76,7 +76,10 @@ func (r *CounterpartyRepository) Update(ctx context.Context, c *model.Counterpar
 		return customErrors.ErrInternal
 	}
 
-	rowsAffected, _ := res.RowsAffected()
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return customErrors.ErrInternal
+	}
 	if rowsAffected == 0 {
 		return customErrors.ErrNotFound
 	}
@@ -89,11 +92,17 @@ func (r *CounterpartyRepository) Delete(ctx context.Context, id uuid.UUID) error
 
 	res, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23503" {
+			return customErrors.NewAppError(customErrors.ErrConflict, "counterparty is referenced by an order")
+		}
 		r.logger.Error("repository: failed to delete counterparty", "id", id, "error", err)
 		return customErrors.ErrInternal
 	}
 
-	rowsAffected, _ := res.RowsAffected()
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return customErrors.ErrInternal
+	}
 	if rowsAffected == 0 {
 		return customErrors.ErrNotFound
 	}

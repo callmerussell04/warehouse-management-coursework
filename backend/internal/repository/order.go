@@ -22,22 +22,13 @@ func NewOrderRepository(db *sql.DB, logger *slog.Logger) *OrderRepository {
 	return &OrderRepository{db: db, logger: logger}
 }
 
-func (r *OrderRepository) Create(ctx context.Context, order *model.Order) (err error) {
+func (r *OrderRepository) Create(ctx context.Context, order *model.Order) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		r.logger.Error("repo: failed to begin transaction", "error", err)
 		return customErrors.ErrInternal
 	}
-	defer func() {
-		if p := recover(); p != nil {
-			tx.Rollback()
-			panic(p)
-		} else if err != nil {
-			tx.Rollback()
-		} else {
-			err = tx.Commit()
-		}
-	}()
+	defer tx.Rollback()
 
 	orderQuery := `
 		INSERT INTO orders (id, counterparty_id, status, order_date, created_at, updated_at, order_type, destination) 
@@ -49,8 +40,8 @@ func (r *OrderRepository) Create(ctx context.Context, order *model.Order) (err e
 		order.OrderType, order.Destination)
 
 	if err != nil {
-		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23503" {
-			return customErrors.ErrNotFound
+		if mapped := mapOrderWriteError(err); mapped != nil {
+			return mapped
 		}
 		r.logger.Error("repo: failed to create order", "error", err)
 		return customErrors.ErrInternal
@@ -65,24 +56,33 @@ func (r *OrderRepository) Create(ctx context.Context, order *model.Order) (err e
 			order.ID, item.ProductID, item.Quantity)
 
 		if err != nil {
-			if pqErr, ok := err.(*pq.Error); ok && (pqErr.Code == "23503" || pqErr.Code == "23505") {
-				return customErrors.ErrNotFound
+			if mapped := mapOrderWriteError(err); mapped != nil {
+				return mapped
 			}
 			r.logger.Error("repo: failed to create order item", "error", err)
 			return customErrors.ErrInternal
 		}
 	}
 
+	if err := tx.Commit(); err != nil {
+		r.logger.Error("repo: failed to commit order", "error", err)
+		return customErrors.ErrInternal
+	}
 	return nil
 }
 
-func (r *OrderRepository) getItemsByOrderID(ctx context.Context, orderID uuid.UUID) ([]model.OrderItem, error) {
+type queryContexter interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func (r *OrderRepository) getItemsByOrderID(ctx context.Context, queryer queryContexter, orderID uuid.UUID) ([]model.OrderItem, error) {
 	query := `
 		SELECT product_id, quantity 
 		FROM order_items 
-		WHERE order_id = $1`
+		WHERE order_id = $1
+		ORDER BY product_id`
 
-	rows, err := r.db.QueryContext(ctx, query, orderID)
+	rows, err := queryer.QueryContext(ctx, query, orderID)
 	if err != nil {
 		r.logger.Error("repo: failed to query order items", "order_id", orderID, "error", err)
 		return nil, customErrors.ErrInternal
@@ -138,7 +138,7 @@ func (r *OrderRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Ord
 	order.OrderType = model.OrderType(typeStr)
 	order.Destination = destination.String
 
-	items, err := r.getItemsByOrderID(ctx, id)
+	items, err := r.getItemsByOrderID(ctx, r.db, id)
 	if err != nil {
 		return nil, err
 	}
@@ -147,25 +147,121 @@ func (r *OrderRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Ord
 	return order, nil
 }
 
-func (r *OrderRepository) Update(ctx context.Context, order *model.Order) error {
-	orderQuery := `
-		UPDATE orders 
-		SET status = $1, updated_at = $2
-		WHERE id = $3`
-
-	res, err := r.db.ExecContext(ctx, orderQuery, order.Status, order.UpdatedAt, order.ID)
-
+func (r *OrderRepository) Transition(ctx context.Context, id uuid.UUID, targetStatus model.OrderStatus) (*model.Order, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		r.logger.Error("repo: failed to update order status", "id", order.ID, "error", err)
-		return customErrors.ErrInternal
+		return nil, customErrors.ErrInternal
+	}
+	defer tx.Rollback()
+
+	order := &model.Order{}
+	var statusStr, typeStr string
+	var destination sql.NullString
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, counterparty_id, status, order_date, created_at, updated_at, order_type, destination
+		FROM orders WHERE id = $1 FOR UPDATE`, id).Scan(
+		&order.ID, &order.CounterpartyID, &statusStr, &order.OrderDate,
+		&order.CreatedAt, &order.UpdatedAt, &typeStr, &destination,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, customErrors.ErrNotFound
+	}
+	if err != nil {
+		r.logger.Error("repo: failed to lock order", "id", id, "error", err)
+		return nil, customErrors.ErrInternal
+	}
+	order.Status = model.OrderStatus(statusStr)
+	order.OrderType = model.OrderType(typeStr)
+	order.Destination = destination.String
+
+	if !isAllowedOrderTransition(order.Status, targetStatus) {
+		return nil, customErrors.NewAppError(customErrors.ErrInvalidInput, "invalid order status transition")
 	}
 
-	rowsAffected, _ := res.RowsAffected()
-	if rowsAffected == 0 {
+	items, err := r.getItemsByOrderID(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	order.Items = items
+
+	if targetStatus == model.StatusCompleted {
+		transactionType := model.TransactionIncome
+		if order.OrderType == model.OrderOutbound {
+			transactionType = model.TransactionExpense
+		} else if order.OrderType != model.OrderInbound {
+			return nil, customErrors.NewAppError(customErrors.ErrInvalidInput, "invalid order type")
+		}
+
+		for _, item := range items {
+			var currentQuantity int64
+			err := tx.QueryRowContext(ctx, "SELECT quantity FROM products WHERE id = $1 FOR UPDATE", item.ProductID).Scan(&currentQuantity)
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, customErrors.ErrNotFound
+			}
+			if err != nil {
+				return nil, customErrors.ErrInternal
+			}
+
+			newQuantity := currentQuantity
+			if transactionType == model.TransactionIncome {
+				if currentQuantity > (1<<63-1)-item.Quantity {
+					return nil, customErrors.NewAppError(customErrors.ErrInvalidInput, "stock quantity overflow")
+				}
+				newQuantity += item.Quantity
+			} else {
+				if currentQuantity < item.Quantity {
+					return nil, customErrors.ErrInsufficientStock
+				}
+				newQuantity -= item.Quantity
+			}
+
+			if _, err := tx.ExecContext(ctx, "UPDATE products SET quantity = $1, updated_at = NOW() WHERE id = $2", newQuantity, item.ProductID); err != nil {
+				return nil, customErrors.ErrInternal
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO inventory_transactions (id, product_id, type, quantity, balance_after, created_at)
+				VALUES ($1, $2, $3, $4, $5, NOW())`, uuid.New(), item.ProductID, transactionType, item.Quantity, newQuantity); err != nil {
+				return nil, customErrors.ErrInternal
+			}
+		}
+	}
+
+	order.Status = targetStatus
+	if err := tx.QueryRowContext(ctx, `
+		UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2
+		RETURNING updated_at`, targetStatus, id).Scan(&order.UpdatedAt); err != nil {
+		return nil, customErrors.ErrInternal
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, customErrors.ErrInternal
+	}
+	return order, nil
+}
+
+func isAllowedOrderTransition(current, target model.OrderStatus) bool {
+	switch current {
+	case model.StatusPending:
+		return target == model.StatusProcessing || target == model.StatusCompleted || target == model.StatusCanceled
+	case model.StatusProcessing:
+		return target == model.StatusCompleted || target == model.StatusCanceled
+	default:
+		return false
+	}
+}
+
+func mapOrderWriteError(err error) error {
+	pqErr, ok := err.(*pq.Error)
+	if !ok {
+		return nil
+	}
+	switch pqErr.Code {
+	case "23503":
 		return customErrors.ErrNotFound
+	case "23505", "23514":
+		return customErrors.ErrInvalidInput
+	default:
+		return nil
 	}
-
-	return nil
 }
 
 func (r *OrderRepository) Delete(ctx context.Context, id uuid.UUID) error {
@@ -176,7 +272,10 @@ func (r *OrderRepository) Delete(ctx context.Context, id uuid.UUID) error {
 		return customErrors.ErrInternal
 	}
 
-	rowsAffected, _ := res.RowsAffected()
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return customErrors.ErrInternal
+	}
 	if rowsAffected == 0 {
 		return customErrors.ErrNotFound
 	}

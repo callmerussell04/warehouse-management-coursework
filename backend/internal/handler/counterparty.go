@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -102,15 +101,11 @@ func (h *CounterpartyHandler) Delete(c *gin.Context) {
 }
 
 func (h *CounterpartyHandler) GetList(c *gin.Context) {
-	pageStr := c.DefaultQuery("page", "1")
-	pageSizeStr := c.DefaultQuery("pageSize", "10")
 	typeFilter := c.Query("type")
 
-	page, errP := strconv.Atoi(pageStr)
-	pageSize, errS := strconv.Atoi(pageSizeStr)
-
-	if errP != nil || errS != nil || page < 1 || pageSize < 1 {
-		RespondWithError(c, h.logger, customErrors.NewAppError(customErrors.ErrInvalidInput, "Parameters 'page' and 'pageSize' must be positive integers."))
+	page, pageSize, err := parsePaging(c)
+	if err != nil {
+		RespondWithError(c, h.logger, err)
 		return
 	}
 

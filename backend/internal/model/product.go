@@ -10,7 +10,7 @@ type Product struct {
 	ID        uuid.UUID
 	Name      string
 	SKU       string
-	Quantity  int
+	Quantity  int64
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -27,7 +27,7 @@ type InventoryTransaction struct {
 	ProductID    uuid.UUID
 	ProductName  string
 	Type         TransactionType
-	Quantity     int
-	BalanceAfter int
+	Quantity     int64
+	BalanceAfter int64
 	CreatedAt    time.Time
 }

@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -18,7 +20,7 @@ type ProductRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*model.Product, error)
 	Update(ctx context.Context, p *model.Product) error
 	Delete(ctx context.Context, id uuid.UUID) error
-	UpdateStock(ctx context.Context, productID uuid.UUID, amount int, transType model.TransactionType) error
+	UpdateStock(ctx context.Context, productID uuid.UUID, amount int64, transType model.TransactionType) error
 	GetProductHistory(ctx context.Context, productID uuid.UUID, limit, offset int, from, to time.Time) ([]*model.InventoryTransaction, int, error)
 }
 
@@ -35,7 +37,9 @@ func NewProductService(repo ProductRepository, logger *slog.Logger) *ProductServ
 }
 
 func (s *ProductService) Create(ctx context.Context, sku, name string) (*model.Product, error) {
-	if sku == "" || name == "" {
+	sku = strings.TrimSpace(sku)
+	name = strings.TrimSpace(name)
+	if sku == "" || name == "" || utf8.RuneCountInString(sku) > 128 || utf8.RuneCountInString(name) > 255 {
 		return nil, customErrors.ErrInvalidInput
 	}
 
@@ -63,6 +67,9 @@ func (s *ProductService) GetList(ctx context.Context, page, pageSize int) ([]*mo
 	if pageSize < 1 {
 		pageSize = 10
 	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
 
 	limit := pageSize
 	offset := (page - 1) * pageSize
@@ -81,7 +88,9 @@ func (s *ProductService) GetByID(ctx context.Context, id uuid.UUID) (*model.Prod
 }
 
 func (s *ProductService) Update(ctx context.Context, id uuid.UUID, sku, name string) (*model.Product, error) {
-	if sku == "" || name == "" {
+	sku = strings.TrimSpace(sku)
+	name = strings.TrimSpace(name)
+	if sku == "" || name == "" || utf8.RuneCountInString(sku) > 128 || utf8.RuneCountInString(name) > 255 {
 		return nil, customErrors.ErrInvalidInput
 	}
 
@@ -107,7 +116,7 @@ func (s *ProductService) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (s *ProductService) ChangeStock(ctx context.Context, productID uuid.UUID, amount int, transactionType string) error {
+func (s *ProductService) ChangeStock(ctx context.Context, productID uuid.UUID, amount int64, transactionType string) error {
 	if amount <= 0 {
 		return customErrors.ErrInvalidInput
 	}
@@ -165,8 +174,11 @@ func (s *ProductService) GetProductHistory(ctx context.Context, productID uuid.U
 			}
 		}
 		if to.Hour() == 0 && to.Minute() == 0 && to.Second() == 0 {
-			to = to.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+			to = to.AddDate(0, 0, 1)
 		}
+	}
+	if !from.IsZero() && !to.IsZero() && !from.Before(to) {
+		return nil, 0, customErrors.NewAppError(customErrors.ErrInvalidInput, "'from' must be before 'to'")
 	}
 
 	return s.repo.GetProductHistory(ctx, productID, limit, offset, from, to)

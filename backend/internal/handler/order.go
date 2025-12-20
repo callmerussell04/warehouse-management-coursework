@@ -4,10 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"warehouse-management-system/internal/dto"
-	customErrors "warehouse-management-system/internal/errors"
 	"warehouse-management-system/internal/model"
 
 	"github.com/gin-gonic/gin"
@@ -32,14 +30,6 @@ func NewOrderHandler(service OrderService, logger *slog.Logger) *OrderHandler {
 	return &OrderHandler{
 		service: service,
 		logger:  logger,
-	}
-}
-
-func orderItemRequestToModel(req dto.OrderItemRequest) model.OrderItem {
-	productID, _ := uuid.Parse(req.ProductID)
-	return model.OrderItem{
-		ProductID: productID,
-		Quantity:  req.Quantity,
 	}
 }
 
@@ -72,11 +62,20 @@ func (h *OrderHandler) Create(c *gin.Context) {
 		return
 	}
 
-	counterpartyID, _ := uuid.Parse(req.CounterpartyID)
+	counterpartyID, err := uuid.Parse(req.CounterpartyID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid counterparty UUID format"})
+		return
+	}
 
 	items := make([]model.OrderItem, len(req.Items))
 	for i, itemReq := range req.Items {
-		items[i] = orderItemRequestToModel(itemReq)
+		productID, err := uuid.Parse(itemReq.ProductID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid product UUID format"})
+			return
+		}
+		items[i] = model.OrderItem{ProductID: productID, Quantity: itemReq.Quantity}
 	}
 
 	destination := ""
@@ -161,14 +160,9 @@ func (h *OrderHandler) Delete(c *gin.Context) {
 }
 
 func (h *OrderHandler) GetList(c *gin.Context) {
-	pageStr := c.DefaultQuery("page", "1")
-	pageSizeStr := c.DefaultQuery("pageSize", "10")
-
-	page, errP := strconv.Atoi(pageStr)
-	pageSize, errS := strconv.Atoi(pageSizeStr)
-
-	if errP != nil || errS != nil || page < 1 || pageSize < 1 {
-		RespondWithError(c, h.logger, customErrors.NewAppError(customErrors.ErrInvalidInput, "Parameters 'page' and 'pageSize' must be positive integers."))
+	page, pageSize, err := parsePaging(c)
+	if err != nil {
+		RespondWithError(c, h.logger, err)
 		return
 	}
 

@@ -23,7 +23,7 @@ func TestOrderService_Create(t *testing.T) {
 	tests := []struct {
 		name      string
 		args      args
-		prepare   func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService, pm *mocks.OrderProductService)
+		prepare   func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService)
 		wantError error
 		checkRes  func(*testing.T, *model.Order)
 	}{
@@ -36,7 +36,7 @@ func TestOrderService_Create(t *testing.T) {
 					Items:          []model.OrderItem{{ProductID: uuid.New(), Quantity: 10}},
 				},
 			},
-			prepare: func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService, pm *mocks.OrderProductService) {
+			prepare: func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService) {
 				cm.EXPECT().GetByID(mock.Anything, cpID).Return(&model.Counterparty{ID: cpID, Type: model.CounterpartySupplier}, nil)
 				rm.EXPECT().Create(mock.Anything, mock.MatchedBy(func(o *model.Order) bool {
 					return o.Status == model.StatusPending && o.ID != uuid.Nil
@@ -58,7 +58,7 @@ func TestOrderService_Create(t *testing.T) {
 					Items:          []model.OrderItem{{ProductID: uuid.New(), Quantity: 5}},
 				},
 			},
-			prepare: func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService, pm *mocks.OrderProductService) {
+			prepare: func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService) {
 				cm.EXPECT().GetByID(mock.Anything, cpID).Return(&model.Counterparty{ID: cpID, Type: model.CounterpartyClient}, nil)
 				rm.EXPECT().Create(mock.Anything, mock.MatchedBy(func(o *model.Order) bool {
 					return o.OrderType == model.OrderOutbound
@@ -68,32 +68,32 @@ func TestOrderService_Create(t *testing.T) {
 		},
 		{
 			name: "Counterparty Service Error",
-			args: args{order: &model.Order{CounterpartyID: cpID}},
-			prepare: func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService, pm *mocks.OrderProductService) {
+			args: args{order: &model.Order{CounterpartyID: cpID, Items: []model.OrderItem{{ProductID: uuid.New(), Quantity: 1}}}},
+			prepare: func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService) {
 				cm.EXPECT().GetByID(mock.Anything, cpID).Return(nil, errors.New("cp error"))
 			},
 			wantError: errors.New("cp error"),
 		},
 		{
 			name: "Inbound Wrong CP Type",
-			args: args{order: &model.Order{CounterpartyID: cpID, OrderType: model.OrderInbound}},
-			prepare: func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService, pm *mocks.OrderProductService) {
+			args: args{order: &model.Order{CounterpartyID: cpID, OrderType: model.OrderInbound, Items: []model.OrderItem{{ProductID: uuid.New(), Quantity: 1}}}},
+			prepare: func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService) {
 				cm.EXPECT().GetByID(mock.Anything, cpID).Return(&model.Counterparty{ID: cpID, Type: model.CounterpartyClient}, nil)
 			},
 			wantError: customErrors.ErrInvalidInput,
 		},
 		{
 			name: "Outbound Wrong CP Type",
-			args: args{order: &model.Order{CounterpartyID: cpID, OrderType: model.OrderOutbound, Destination: "Addr"}},
-			prepare: func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService, pm *mocks.OrderProductService) {
+			args: args{order: &model.Order{CounterpartyID: cpID, OrderType: model.OrderOutbound, Destination: "Addr", Items: []model.OrderItem{{ProductID: uuid.New(), Quantity: 1}}}},
+			prepare: func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService) {
 				cm.EXPECT().GetByID(mock.Anything, cpID).Return(&model.Counterparty{ID: cpID, Type: model.CounterpartySupplier}, nil)
 			},
 			wantError: customErrors.ErrInvalidInput,
 		},
 		{
 			name: "Outbound Missing Destination",
-			args: args{order: &model.Order{CounterpartyID: cpID, OrderType: model.OrderOutbound, Destination: ""}},
-			prepare: func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService, pm *mocks.OrderProductService) {
+			args: args{order: &model.Order{CounterpartyID: cpID, OrderType: model.OrderOutbound, Destination: "", Items: []model.OrderItem{{ProductID: uuid.New(), Quantity: 1}}}},
+			prepare: func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService) {
 				cm.EXPECT().GetByID(mock.Anything, cpID).Return(&model.Counterparty{ID: cpID, Type: model.CounterpartyClient}, nil)
 			},
 			wantError: customErrors.ErrInvalidInput,
@@ -104,10 +104,10 @@ func TestOrderService_Create(t *testing.T) {
 				order: &model.Order{
 					CounterpartyID: cpID,
 					OrderType:      model.OrderInbound,
-					Items:          []model.OrderItem{},
+					Items:          []model.OrderItem{{ProductID: uuid.New(), Quantity: 1}},
 				},
 			},
-			prepare: func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService, pm *mocks.OrderProductService) {
+			prepare: func(rm *mocks.OrderRepository, cm *mocks.OrderCounterpartyService) {
 				cm.EXPECT().GetByID(mock.Anything, cpID).Return(&model.Counterparty{ID: cpID, Type: model.CounterpartySupplier}, nil)
 				rm.EXPECT().Create(mock.Anything, mock.Anything).Return(errors.New("db fail"))
 			},
@@ -119,13 +119,11 @@ func TestOrderService_Create(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			rm := mocks.NewOrderRepository(t)
 			cm := mocks.NewOrderCounterpartyService(t)
-			pm := mocks.NewOrderProductService(t)
-
 			if tc.prepare != nil {
-				tc.prepare(rm, cm, pm)
+				tc.prepare(rm, cm)
 			}
 
-			svc := service.NewOrderService(rm, cm, pm, newDiscardLogger())
+			svc := service.NewOrderService(rm, cm, newDiscardLogger())
 			got, err := svc.Create(context.Background(), tc.args.order)
 
 			if tc.wantError != nil {
@@ -149,7 +147,7 @@ func TestOrderService_GetByID(t *testing.T) {
 	rm := mocks.NewOrderRepository(t)
 	rm.EXPECT().GetByID(mock.Anything, id).Return(expectedOrder, nil)
 
-	svc := service.NewOrderService(rm, nil, nil, newDiscardLogger())
+	svc := service.NewOrderService(rm, nil, newDiscardLogger())
 	got, err := svc.GetByID(context.Background(), id)
 
 	assert.NoError(t, err)
@@ -158,138 +156,19 @@ func TestOrderService_GetByID(t *testing.T) {
 
 func TestOrderService_Update(t *testing.T) {
 	id := uuid.New()
-	prodID1 := uuid.New()
-	prodID2 := uuid.New()
+	expected := &model.Order{ID: id, Status: model.StatusCompleted}
+	rm := mocks.NewOrderRepository(t)
+	rm.EXPECT().Transition(mock.Anything, id, model.StatusCompleted).Return(expected, nil)
 
-	type args struct {
-		id        uuid.UUID
-		newStatus string
-	}
-	tests := []struct {
-		name      string
-		args      args
-		prepare   func(rm *mocks.OrderRepository, pm *mocks.OrderProductService)
-		wantError error
-	}{
-		{
-			name: "Success Status Change Pending to Processing",
-			args: args{id: id, newStatus: string(model.StatusProcessing)},
-			prepare: func(rm *mocks.OrderRepository, pm *mocks.OrderProductService) {
-				order := &model.Order{ID: id, Status: model.StatusPending}
-				rm.EXPECT().GetByID(mock.Anything, id).Return(order, nil)
-				rm.EXPECT().Update(mock.Anything, mock.MatchedBy(func(o *model.Order) bool {
-					return o.Status == model.StatusProcessing
-				})).Return(nil)
-			},
-			wantError: nil,
-		},
-		{
-			name: "Success Complete Inbound (Income)",
-			args: args{id: id, newStatus: string(model.StatusCompleted)},
-			prepare: func(rm *mocks.OrderRepository, pm *mocks.OrderProductService) {
-				order := &model.Order{
-					ID:        id,
-					Status:    model.StatusProcessing,
-					OrderType: model.OrderInbound,
-					Items:     []model.OrderItem{{ProductID: prodID1, Quantity: 10}},
-				}
-				rm.EXPECT().GetByID(mock.Anything, id).Return(order, nil)
-				pm.EXPECT().ChangeStock(mock.Anything, prodID1, 10, "income").Return(nil)
-				rm.EXPECT().Update(mock.Anything, mock.MatchedBy(func(o *model.Order) bool {
-					return o.Status == model.StatusCompleted
-				})).Return(nil)
-			},
-			wantError: nil,
-		},
-		{
-			name: "Success Complete Outbound (Expense)",
-			args: args{id: id, newStatus: string(model.StatusCompleted)},
-			prepare: func(rm *mocks.OrderRepository, pm *mocks.OrderProductService) {
-				order := &model.Order{
-					ID:        id,
-					Status:    model.StatusProcessing,
-					OrderType: model.OrderOutbound,
-					Items:     []model.OrderItem{{ProductID: prodID1, Quantity: 5}},
-				}
-				rm.EXPECT().GetByID(mock.Anything, id).Return(order, nil)
-				pm.EXPECT().ChangeStock(mock.Anything, prodID1, 5, "expense").Return(nil)
-				rm.EXPECT().Update(mock.Anything, mock.MatchedBy(func(o *model.Order) bool {
-					return o.Status == model.StatusCompleted
-				})).Return(nil)
-			},
-			wantError: nil,
-		},
-		{
-			name: "Cannot Update Canceled Order",
-			args: args{id: id, newStatus: string(model.StatusProcessing)},
-			prepare: func(rm *mocks.OrderRepository, pm *mocks.OrderProductService) {
-				order := &model.Order{ID: id, Status: model.StatusCanceled}
-				rm.EXPECT().GetByID(mock.Anything, id).Return(order, nil)
-			},
-			wantError: customErrors.ErrInvalidInput,
-		},
-		{
-			name: "Stock Update Fail with Rollback",
-			args: args{id: id, newStatus: string(model.StatusCompleted)},
-			prepare: func(rm *mocks.OrderRepository, pm *mocks.OrderProductService) {
-				order := &model.Order{
-					ID:        id,
-					Status:    model.StatusProcessing,
-					OrderType: model.OrderInbound,
-					Items: []model.OrderItem{
-						{ProductID: prodID1, Quantity: 10},
-						{ProductID: prodID2, Quantity: 20},
-					},
-				}
-				rm.EXPECT().GetByID(mock.Anything, id).Return(order, nil)
-				pm.EXPECT().ChangeStock(mock.Anything, prodID1, 10, "income").Return(nil)
-				pm.EXPECT().ChangeStock(mock.Anything, prodID2, 20, "income").Return(errors.New("stock error"))
+	svc := service.NewOrderService(rm, nil, newDiscardLogger())
+	got, err := svc.Update(context.Background(), id, string(model.StatusCompleted))
 
-				pm.EXPECT().ChangeStock(mock.Anything, prodID1, 10, "expense").Return(nil)
-			},
-			wantError: errors.New("stock error"),
-		},
-		{
-			name: "Repo Update Fail after Stock Update",
-			args: args{id: id, newStatus: string(model.StatusCompleted)},
-			prepare: func(rm *mocks.OrderRepository, pm *mocks.OrderProductService) {
-				order := &model.Order{
-					ID:        id,
-					Status:    model.StatusProcessing,
-					OrderType: model.OrderInbound,
-					Items:     []model.OrderItem{{ProductID: prodID1, Quantity: 10}},
-				}
-				rm.EXPECT().GetByID(mock.Anything, id).Return(order, nil)
-				pm.EXPECT().ChangeStock(mock.Anything, prodID1, 10, "income").Return(nil)
-				rm.EXPECT().Update(mock.Anything, mock.Anything).Return(errors.New("db error"))
-			},
-			wantError: errors.New("db error"),
-		},
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, expected, got)
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			rm := mocks.NewOrderRepository(t)
-			pm := mocks.NewOrderProductService(t)
-
-			if tc.prepare != nil {
-				tc.prepare(rm, pm)
-			}
-
-			svc := service.NewOrderService(rm, nil, pm, newDiscardLogger())
-			got, err := svc.Update(context.Background(), tc.args.id, tc.args.newStatus)
-
-			if tc.wantError != nil {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tc.wantError.Error())
-				assert.Nil(t, got)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, got)
-				assert.Equal(t, model.OrderStatus(tc.args.newStatus), got.Status)
-			}
-		})
-	}
+	got, err = svc.Update(context.Background(), id, string(model.StatusPending))
+	assert.ErrorIs(t, err, customErrors.ErrInvalidInput)
+	assert.Nil(t, got)
 }
 
 func TestOrderService_Delete(t *testing.T) {
@@ -338,7 +217,7 @@ func TestOrderService_Delete(t *testing.T) {
 				tc.prepare(rm)
 			}
 
-			svc := service.NewOrderService(rm, nil, nil, newDiscardLogger())
+			svc := service.NewOrderService(rm, nil, newDiscardLogger())
 			err := svc.Delete(context.Background(), id)
 
 			if tc.wantError != nil {
@@ -405,7 +284,7 @@ func TestOrderService_GetList(t *testing.T) {
 				tc.prepare(rm)
 			}
 
-			svc := service.NewOrderService(rm, nil, nil, newDiscardLogger())
+			svc := service.NewOrderService(rm, nil, newDiscardLogger())
 			got, count, err := svc.GetList(context.Background(), tc.args.page, tc.args.pageSize)
 
 			if tc.wantError != nil {

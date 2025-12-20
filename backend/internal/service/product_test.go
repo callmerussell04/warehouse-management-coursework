@@ -222,7 +222,7 @@ func TestProductService_ChangeStock(t *testing.T) {
 	id := uuid.New()
 	type args struct {
 		productID       uuid.UUID
-		amount          int
+		amount          int64
 		transactionType string
 	}
 	tests := []struct {
@@ -235,7 +235,7 @@ func TestProductService_ChangeStock(t *testing.T) {
 			name: "Success Income",
 			args: args{productID: id, amount: 10, transactionType: "income"},
 			prepare: func(m *mocks.ProductRepository) {
-				m.EXPECT().UpdateStock(mock.Anything, id, 10, model.TransactionIncome).Return(nil)
+				m.EXPECT().UpdateStock(mock.Anything, id, int64(10), model.TransactionIncome).Return(nil)
 			},
 			wantErr: false,
 		},
@@ -243,7 +243,7 @@ func TestProductService_ChangeStock(t *testing.T) {
 			name: "Success Expense",
 			args: args{productID: id, amount: 5, transactionType: "expense"},
 			prepare: func(m *mocks.ProductRepository) {
-				m.EXPECT().UpdateStock(mock.Anything, id, 5, model.TransactionExpense).Return(nil)
+				m.EXPECT().UpdateStock(mock.Anything, id, int64(5), model.TransactionExpense).Return(nil)
 			},
 			wantErr: false,
 		},
@@ -265,7 +265,7 @@ func TestProductService_ChangeStock(t *testing.T) {
 			name: "Repo Error",
 			args: args{productID: id, amount: 10, transactionType: "income"},
 			prepare: func(m *mocks.ProductRepository) {
-				m.EXPECT().UpdateStock(mock.Anything, id, 10, model.TransactionIncome).Return(errors.New("db fail"))
+				m.EXPECT().UpdateStock(mock.Anything, id, int64(10), model.TransactionIncome).Return(errors.New("db fail"))
 			},
 			wantErr: true,
 		},
@@ -319,7 +319,7 @@ func TestProductService_GetProductHistory(t *testing.T) {
 			prepare: func(m *mocks.ProductRepository) {
 				from, _ := time.Parse(time.DateOnly, "2025-01-01")
 				to, _ := time.Parse(time.DateOnly, "2025-01-05")
-				toAdjusted := to.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+				toAdjusted := to.AddDate(0, 0, 1)
 
 				m.EXPECT().GetProductHistory(mock.Anything, id, 10, 0, from, toAdjusted).
 					Return(nil, 0, nil)

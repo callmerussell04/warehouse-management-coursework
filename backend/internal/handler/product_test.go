@@ -351,7 +351,7 @@ func TestProductHandler_UpdateStock(t *testing.T) {
 			url:  "/products/" + id.String() + "/stock",
 			body: dto.UpdateStockRequest{Quantity: 10, Type: "income"},
 			prepare: func(m *mocks.ProductService) {
-				m.EXPECT().ChangeStock(mock.Anything, id, 10, "income").Return(nil)
+				m.EXPECT().ChangeStock(mock.Anything, id, int64(10), "income").Return(nil)
 			},
 			expectedStatus: http.StatusOK,
 		},
@@ -368,7 +368,7 @@ func TestProductHandler_UpdateStock(t *testing.T) {
 			url:  "/products/" + id.String() + "/stock",
 			body: dto.UpdateStockRequest{Quantity: 10, Type: "expense"},
 			prepare: func(m *mocks.ProductService) {
-				m.EXPECT().ChangeStock(mock.Anything, id, 10, "expense").Return(customErrors.ErrInsufficientStock)
+				m.EXPECT().ChangeStock(mock.Anything, id, int64(10), "expense").Return(customErrors.ErrInsufficientStock)
 			},
 			expectedStatus: http.StatusConflict,
 		},

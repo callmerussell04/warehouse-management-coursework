@@ -41,7 +41,7 @@ func (r *ReportRepository) GetTurnoverData(ctx context.Context, from, to time.Ti
 				SUM(CASE WHEN type = 'income' THEN quantity ELSE 0 END) as inc,
 				SUM(CASE WHEN type = 'expense' THEN quantity ELSE 0 END) as exp
 			FROM inventory_transactions
-			WHERE created_at >= $1 AND created_at <= $2
+			WHERE created_at >= $1 AND created_at < $2
 			GROUP BY product_id
 		) moves ON moves.product_id = p.id
 		ORDER BY p.name ASC

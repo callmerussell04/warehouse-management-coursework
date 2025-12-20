@@ -37,7 +37,11 @@ func (s *ReportService) GenerateTurnoverPDF(ctx context.Context, fromStr, toStr 
 	if err != nil {
 		return nil, customErrors.NewAppError(customErrors.ErrInvalidInput, "Invalid 'to' date (YYYY-MM-DD)")
 	}
-	to = to.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+	if from.After(to) {
+		return nil, customErrors.NewAppError(customErrors.ErrInvalidInput, "'from' date must not be after 'to' date")
+	}
+	displayTo := to
+	to = to.AddDate(0, 0, 1)
 
 	data, err := s.repo.GetTurnoverData(ctx, from, to)
 	if err != nil {
@@ -52,7 +56,7 @@ func (s *ReportService) GenerateTurnoverPDF(ctx context.Context, fromStr, toStr 
 	pdf.AddPage()
 
 	pdf.SetFont("CustomFont", "", 16)
-	title := fmt.Sprintf("Обороты (%s - %s)", from.Format("2006-01-02"), to.Format("2006-01-02"))
+	title := fmt.Sprintf("Обороты (%s - %s)", from.Format("2006-01-02"), displayTo.Format("2006-01-02"))
 	pdf.Cell(40, 10, title)
 	pdf.Ln(12)
 
@@ -73,10 +77,10 @@ func (s *ReportService) GenerateTurnoverPDF(ctx context.Context, fromStr, toStr 
 	for _, item := range data {
 		pdf.CellFormat(widths[0], 8, item.ProductName, "1", 0, "L", false, 0, "")
 		pdf.CellFormat(widths[1], 8, item.SKU, "1", 0, "L", false, 0, "")
-		pdf.CellFormat(widths[2], 8, strconv.Itoa(item.StartBalance), "1", 0, "R", false, 0, "")
-		pdf.CellFormat(widths[3], 8, strconv.Itoa(item.Income), "1", 0, "R", false, 0, "")
-		pdf.CellFormat(widths[4], 8, strconv.Itoa(item.Expense), "1", 0, "R", false, 0, "")
-		pdf.CellFormat(widths[5], 8, strconv.Itoa(item.EndBalance), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(widths[2], 8, strconv.FormatInt(item.StartBalance, 10), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(widths[3], 8, strconv.FormatInt(item.Income, 10), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(widths[4], 8, strconv.FormatInt(item.Expense, 10), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(widths[5], 8, strconv.FormatInt(item.EndBalance, 10), "1", 0, "R", false, 0, "")
 		pdf.Ln(-1)
 	}
 

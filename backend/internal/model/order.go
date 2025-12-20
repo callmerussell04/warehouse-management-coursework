@@ -37,5 +37,5 @@ type Order struct {
 type OrderItem struct {
 	OrderID   uuid.UUID
 	ProductID uuid.UUID
-	Quantity  int
+	Quantity  int64
 }

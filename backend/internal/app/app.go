@@ -77,7 +77,7 @@ func Run() {
 
 	productService := service.NewProductService(productRepository, logger)
 	counterpartyService := service.NewCounterpartyService(counterpartyRepository, logger)
-	orderService := service.NewOrderService(orderRepository, counterpartyService, productService, logger)
+	orderService := service.NewOrderService(orderRepository, counterpartyService, logger)
 	reportService := service.NewReportService(reportRepository, logger)
 
 	ctxInit, cancelInit := context.WithTimeout(context.Background(), 5*time.Second)

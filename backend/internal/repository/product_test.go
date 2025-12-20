@@ -28,7 +28,7 @@ func newTestDB(t *testing.T) *sql.DB {
 	err = db.Ping()
 	require.NoError(t, err)
 
-	_, err = db.Exec("DELETE FROM products")
+	_, err = db.Exec("TRUNCATE inventory_transactions, order_items, orders, products, counterparties, users CASCADE")
 	require.NoError(t, err)
 
 	return db
@@ -291,7 +291,7 @@ func TestProductRepository_UpdateStock(t *testing.T) {
 	require.NoError(t, err)
 
 	type args struct {
-		amount    int
+		amount    int64
 		transType model.TransactionType
 	}
 
@@ -299,7 +299,7 @@ func TestProductRepository_UpdateStock(t *testing.T) {
 		name      string
 		args      args
 		wantError error
-		wantQty   int
+		wantQty   int64
 	}{
 		{
 			name: "Success Income",
@@ -355,7 +355,7 @@ func TestProductRepository_UpdateStock(t *testing.T) {
 				assert.GreaterOrEqual(t, historyCount, 1)
 			}
 
-			var currentQty int
+			var currentQty int64
 			errQty := db.QueryRow("SELECT quantity FROM products WHERE id = $1", id).Scan(&currentQty)
 			assert.NoError(t, errQty)
 			assert.Equal(t, tc.wantQty, currentQty)

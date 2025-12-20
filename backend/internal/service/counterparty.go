@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"log/slog"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -29,7 +31,10 @@ func NewCounterpartyService(repo CounterpartyRepository, logger *slog.Logger) *C
 }
 
 func (s *CounterpartyService) Create(ctx context.Context, name, typeStr, phone, email string) (*model.Counterparty, error) {
-	if name == "" {
+	name = strings.TrimSpace(name)
+	phone = strings.TrimSpace(phone)
+	email = strings.ToLower(strings.TrimSpace(email))
+	if name == "" || utf8.RuneCountInString(name) > 255 || utf8.RuneCountInString(phone) > 50 || utf8.RuneCountInString(email) > 255 {
 		return nil, customErrors.NewAppError(customErrors.ErrInvalidInput, "Name cannot be empty.")
 	}
 
@@ -63,7 +68,10 @@ func (s *CounterpartyService) GetByID(ctx context.Context, id uuid.UUID) (*model
 }
 
 func (s *CounterpartyService) Update(ctx context.Context, id uuid.UUID, name, phone, email string) (*model.Counterparty, error) {
-	if name == "" {
+	name = strings.TrimSpace(name)
+	phone = strings.TrimSpace(phone)
+	email = strings.ToLower(strings.TrimSpace(email))
+	if name == "" || utf8.RuneCountInString(name) > 255 || utf8.RuneCountInString(phone) > 50 || utf8.RuneCountInString(email) > 255 {
 		return nil, customErrors.NewAppError(customErrors.ErrInvalidInput, "Name cannot be empty.")
 	}
 

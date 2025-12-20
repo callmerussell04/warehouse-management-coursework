@@ -9,6 +9,7 @@ var (
 	ErrInvalidInput      = errors.New("invalid input parameter")
 	ErrInsufficientStock = errors.New("insufficient stock")
 	ErrUnauthorized      = errors.New("unauthorized")
+	ErrConflict          = errors.New("conflict")
 )
 
 type AppError struct {

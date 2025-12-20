@@ -5,8 +5,8 @@ type TransactionResponse struct {
 	ProductID    string `json:"product_id"`
 	ProductName  string `json:"product_name"`
 	Type         string `json:"type"`
-	Quantity     int    `json:"quantity"`
-	BalanceAfter int    `json:"balance_after"`
+	Quantity     int64  `json:"quantity"`
+	BalanceAfter int64  `json:"balance_after"`
 	CreatedAt    string `json:"created_at"`
 }
 

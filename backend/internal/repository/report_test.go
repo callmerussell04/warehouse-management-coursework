@@ -70,10 +70,10 @@ func TestReportRepository_GetTurnoverData(t *testing.T) {
 			checkItem: func(t *testing.T, item dto.TurnoverReportItem) {
 				assert.Equal(t, "Report Item", item.ProductName)
 				assert.Equal(t, "REP-SKU", item.SKU)
-				assert.Equal(t, 10, item.StartBalance)
-				assert.Equal(t, 5, item.Income)
-				assert.Equal(t, 3, item.Expense)
-				assert.Equal(t, 12, item.EndBalance)
+				assert.Equal(t, int64(10), item.StartBalance)
+				assert.Equal(t, int64(5), item.Income)
+				assert.Equal(t, int64(3), item.Expense)
+				assert.Equal(t, int64(12), item.EndBalance)
 			},
 		},
 		{
@@ -89,10 +89,10 @@ func TestReportRepository_GetTurnoverData(t *testing.T) {
 			},
 			wantLen: 1,
 			checkItem: func(t *testing.T, item dto.TurnoverReportItem) {
-				assert.Equal(t, 50, item.StartBalance)
-				assert.Equal(t, 0, item.Income)
-				assert.Equal(t, 0, item.Expense)
-				assert.Equal(t, 50, item.EndBalance)
+				assert.Equal(t, int64(50), item.StartBalance)
+				assert.Equal(t, int64(0), item.Income)
+				assert.Equal(t, int64(0), item.Expense)
+				assert.Equal(t, int64(50), item.EndBalance)
 			},
 		},
 		{
@@ -122,10 +122,10 @@ func TestReportRepository_GetTurnoverData(t *testing.T) {
 			},
 			wantLen: 1,
 			checkItem: func(t *testing.T, item dto.TurnoverReportItem) {
-				assert.Equal(t, 0, item.StartBalance)
-				assert.Equal(t, 20, item.Income)
-				assert.Equal(t, 0, item.Expense)
-				assert.Equal(t, 20, item.EndBalance)
+				assert.Equal(t, int64(0), item.StartBalance)
+				assert.Equal(t, int64(20), item.Income)
+				assert.Equal(t, int64(0), item.Expense)
+				assert.Equal(t, int64(20), item.EndBalance)
 			},
 		},
 	}

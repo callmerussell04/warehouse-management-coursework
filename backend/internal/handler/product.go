@@ -4,14 +4,12 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
 	"warehouse-management-system/internal/dto"
-	customErrors "warehouse-management-system/internal/errors"
 	"warehouse-management-system/internal/model"
 )
 
@@ -22,7 +20,7 @@ type ProductService interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*model.Product, error)
 	Update(ctx context.Context, id uuid.UUID, sku, name string) (*model.Product, error)
 	Delete(ctx context.Context, id uuid.UUID) error
-	ChangeStock(ctx context.Context, productID uuid.UUID, amount int, transactionType string) error
+	ChangeStock(ctx context.Context, productID uuid.UUID, amount int64, transactionType string) error
 	GetProductHistory(ctx context.Context, productID uuid.UUID, page, pageSize int, fromStr, toStr string) ([]*model.InventoryTransaction, int, error)
 }
 
@@ -55,14 +53,9 @@ func (h *ProductHandler) Create(c *gin.Context) {
 }
 
 func (h *ProductHandler) GetList(c *gin.Context) {
-	pageStr := c.DefaultQuery("page", "1")
-	pageSizeStr := c.DefaultQuery("pageSize", "10")
-
-	page, errP := strconv.Atoi(pageStr)
-	pageSize, errS := strconv.Atoi(pageSizeStr)
-
-	if errP != nil || errS != nil || page < 1 || pageSize < 1 {
-		RespondWithError(c, h.logger, customErrors.ErrInvalidInput)
+	page, pageSize, err := parsePaging(c)
+	if err != nil {
+		RespondWithError(c, h.logger, err)
 		return
 	}
 
@@ -183,13 +176,14 @@ func (h *ProductHandler) GetHistory(c *gin.Context) {
 		return
 	}
 
-	pageStr := c.DefaultQuery("page", "1")
-	pageSizeStr := c.DefaultQuery("pageSize", "10")
 	fromStr := c.Query("from")
 	toStr := c.Query("to")
 
-	page, _ := strconv.Atoi(pageStr)
-	pageSize, _ := strconv.Atoi(pageSizeStr)
+	page, pageSize, err := parsePaging(c)
+	if err != nil {
+		RespondWithError(c, h.logger, err)
+		return
+	}
 
 	history, total, err := h.service.GetProductHistory(c.Request.Context(), productID, page, pageSize, fromStr, toStr)
 	if err != nil {

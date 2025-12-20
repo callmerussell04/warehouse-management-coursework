@@ -6,16 +6,16 @@ type PagedCounterparties struct {
 }
 
 type CreateCounterpartyRequest struct {
-	Name        string `json:"name" binding:"required"`
+	Name        string `json:"name" binding:"required,min=1,max=255"`
 	Type        string `json:"type" binding:"required,oneof=client supplier"`
-	PhoneNumber string `json:"phone_number"`
-	Email       string `json:"email"`
+	PhoneNumber string `json:"phone_number" binding:"max=50"`
+	Email       string `json:"email" binding:"omitempty,email,max=254"`
 }
 
 type UpdateCounterpartyRequest struct {
-	Name        string `json:"name" binding:"required"`
-	PhoneNumber string `json:"phone_number"`
-	Email       string `json:"email"`
+	Name        string `json:"name" binding:"required,min=1,max=255"`
+	PhoneNumber string `json:"phone_number" binding:"max=50"`
+	Email       string `json:"email" binding:"omitempty,email,max=254"`
 }
 
 type CounterpartyResponse struct {
