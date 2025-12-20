@@ -8,7 +8,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
-BASE_URL = "http://localhost:5000"
+BASE_URL = "http://localhost"
 
 ADMIN_CREDENTIALS = {"username": "admin", "password": "admin"}
 WORKER_CREDENTIALS = {"username": "worker", "password": "3e2w1q"}

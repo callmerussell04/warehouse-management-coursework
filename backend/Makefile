@@ -26,11 +26,11 @@ test: mock test-env-up .install-gotestsum
 
 .PHONY: test-env-up
 test-env-up:
-	docker-compose -f $(TEST_COMPOSE_FILE) up -d
+	docker compose -f $(TEST_COMPOSE_FILE) up -d
 
 .PHONY: test-env-down
 test-env-down:
-	docker-compose -f $(TEST_COMPOSE_FILE) down
+	docker compose -f $(TEST_COMPOSE_FILE) down
 
 .PHONY: mock
 mock:

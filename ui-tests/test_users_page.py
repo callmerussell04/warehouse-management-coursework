@@ -9,7 +9,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 from webdriver_manager.chrome import ChromeDriverManager
 
-BASE_URL = "http://localhost:5000"
+BASE_URL = "http://localhost"
 ADMIN_CREDENTIALS = {"username": "admin", "password": "admin"}
 
 @pytest.fixture(scope="function")
